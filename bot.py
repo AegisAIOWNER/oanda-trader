@@ -46,7 +46,7 @@ class OandaTradingBot:
         balance = float(response['account']['balance'])
         return margin_available > (balance * MARGIN_BUFFER)
 
-    def get_prices(self, instrument, count=50, granularity='H1'):
+    def get_prices(self, instrument, count=50, granularity=GRANULARITY):
         params = {'count': count, 'granularity': granularity}
         r = pricing.PricingCandles(instrument=instrument, params=params)
         response = self._rate_limited_request(r)
@@ -101,7 +101,7 @@ class OandaTradingBot:
             return False
         return True
 
-    def run(self, interval=3600):
+    def run(self, interval=CHECK_INTERVAL):
         while True:
             if not self.run_cycle():
                 break

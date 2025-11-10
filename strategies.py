@@ -1,4 +1,15 @@
 import pandas as pd
+import pandas_ta as ta
+
+def scalping_rsi(df):
+    if len(df) < 14:
+        return None
+    rsi = ta.rsi(df['close'], length=14)
+    if rsi.iloc[-1] < 30:
+        return 'BUY'
+    elif rsi.iloc[-1] > 70:
+        return 'SELL'
+    return None
 
 def ma_crossover(df):
     if len(df) < 10:
@@ -14,7 +25,9 @@ def ma_crossover(df):
     return None
 
 def get_signal(df, strategy):
-    if strategy == 'ma_crossover':
+    if strategy == 'scalping_rsi':
+        return scalping_rsi(df)
+    elif strategy == 'ma_crossover':
         return ma_crossover(df)
     # Add more strategies here
     return None

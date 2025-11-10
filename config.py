@@ -11,10 +11,14 @@ ENVIRONMENT = os.getenv('OANDA_ENVIRONMENT', 'practice')  # 'practice' or 'live'
 INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY']  # Add more as needed
 RATE_LIMIT_DELAY = 1.0 / 30  # 30 req/sec for practice
 MARGIN_BUFFER = 0.1  # 10% margin buffer
-DEFAULT_UNITS = 1000  # Base trade size
-STRATEGY = 'ma_crossover'  # Default strategy
+DEFAULT_UNITS = 1000  # Base trade size; reduce for scalping (e.g., 100)
+STRATEGY = 'scalping_rsi'  # Changed to scalping
+
+# For scalping
+GRANULARITY = 'M5'  # 5-minute candles for scalping
+CHECK_INTERVAL = 300  # 5 minutes between checks
 
 # Risk management
-STOP_LOSS_PIPS = 50
-TAKE_PROFIT_PIPS = 100
+STOP_LOSS_PIPS = 5  # Tighter stops for scalping
+TAKE_PROFIT_PIPS = 10  # Smaller targets
 MAX_DAILY_LOSS_PERCENT = 6.0  # Daily stop

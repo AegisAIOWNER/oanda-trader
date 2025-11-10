@@ -4,3 +4,4 @@ numpy
 backtrader
 python-dotenv
 click
+pandas-ta
