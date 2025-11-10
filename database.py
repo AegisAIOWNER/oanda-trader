@@ -1,230 +1,141 @@
-"""
-Database module for storing trade history and model training data.
-"""
 import sqlite3
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
-import json
 
 class TradeDatabase:
-    """SQLite database for storing trade history and analytics."""
+    """Database for storing trade history and performance metrics."""
     
     def __init__(self, db_path='trades.db'):
         self.db_path = db_path
-        self.conn = None
-        self._init_database()
+        self._create_tables()
     
-    def _init_database(self):
-        """Initialize database and create tables if they don't exist."""
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        cursor = self.conn.cursor()
+    def _create_tables(self):
+        """Create necessary database tables."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
-        # Trade history table
+        # Create trades table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
                 instrument TEXT NOT NULL,
                 signal TEXT NOT NULL,
-                confidence REAL NOT NULL,
-                entry_price REAL NOT NULL,
+                confidence REAL,
+                entry_price REAL,
                 stop_loss REAL,
                 take_profit REAL,
-                units INTEGER NOT NULL,
+                units INTEGER,
                 atr REAL,
-                exit_price REAL,
-                exit_timestamp TEXT,
-                profit_loss REAL,
-                status TEXT DEFAULT 'open',
                 ml_prediction REAL,
-                position_size_pct REAL
+                position_size_pct REAL,
+                entry_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                exit_price REAL,
+                exit_time TIMESTAMP,
+                pnl REAL,
+                status TEXT DEFAULT 'OPEN'
             )
         ''')
         
-        # Market data for model training
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS market_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                instrument TEXT NOT NULL,
-                timeframe TEXT NOT NULL,
-                open REAL NOT NULL,
-                high REAL NOT NULL,
-                low REAL NOT NULL,
-                close REAL NOT NULL,
-                volume INTEGER NOT NULL,
-                rsi REAL,
-                macd REAL,
-                macd_signal REAL,
-                atr REAL,
-                bb_upper REAL,
-                bb_lower REAL,
-                UNIQUE(timestamp, instrument, timeframe)
-            )
-        ''')
-        
-        # Model training history
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS model_training (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                model_type TEXT NOT NULL,
-                accuracy REAL,
-                precision_score REAL,
-                recall_score REAL,
-                f1_score REAL,
-                training_samples INTEGER,
-                parameters TEXT
-            )
-        ''')
-        
-        self.conn.commit()
-        logging.info(f"Database initialized at {self.db_path}")
+        conn.commit()
+        conn.close()
     
     def store_trade(self, trade_data):
         """Store a new trade in the database."""
-        cursor = self.conn.cursor()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
         cursor.execute('''
             INSERT INTO trades (
-                timestamp, instrument, signal, confidence, entry_price,
-                stop_loss, take_profit, units, atr, ml_prediction, position_size_pct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                instrument, signal, confidence, entry_price, stop_loss, 
+                take_profit, units, atr, ml_prediction, position_size_pct
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            trade_data.get('timestamp', datetime.now().isoformat()),
             trade_data['instrument'],
             trade_data['signal'],
             trade_data['confidence'],
             trade_data['entry_price'],
-            trade_data.get('stop_loss'),
-            trade_data.get('take_profit'),
+            trade_data['stop_loss'],
+            trade_data['take_profit'],
             trade_data['units'],
-            trade_data.get('atr'),
-            trade_data.get('ml_prediction'),
-            trade_data.get('position_size_pct')
+            trade_data.get('atr', 0.0),
+            trade_data.get('ml_prediction', 0.5),
+            trade_data.get('position_size_pct', 0.0)
         ))
-        self.conn.commit()
-        return cursor.lastrowid
+        
+        conn.commit()
+        conn.close()
+        logging.info(f"Trade stored in database: {trade_data['instrument']} {trade_data['signal']}")
     
-    def update_trade(self, trade_id, exit_price, profit_loss, status='closed'):
-        """Update a trade with exit information."""
-        cursor = self.conn.cursor()
+    def update_trade_exit(self, trade_id, exit_price, pnl):
+        """Update trade with exit information."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
         cursor.execute('''
-            UPDATE trades
-            SET exit_price = ?, exit_timestamp = ?, profit_loss = ?, status = ?
+            UPDATE trades 
+            SET exit_price = ?, exit_time = CURRENT_TIMESTAMP, pnl = ?, status = 'CLOSED'
             WHERE id = ?
-        ''', (exit_price, datetime.now().isoformat(), profit_loss, status, trade_id))
-        self.conn.commit()
-    
-    def store_market_data(self, data_dict):
-        """Store market data for model training."""
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO market_data (
-                timestamp, instrument, timeframe, open, high, low, close, volume,
-                rsi, macd, macd_signal, atr, bb_upper, bb_lower
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            data_dict['timestamp'],
-            data_dict['instrument'],
-            data_dict['timeframe'],
-            data_dict['open'],
-            data_dict['high'],
-            data_dict['low'],
-            data_dict['close'],
-            data_dict['volume'],
-            data_dict.get('rsi'),
-            data_dict.get('macd'),
-            data_dict.get('macd_signal'),
-            data_dict.get('atr'),
-            data_dict.get('bb_upper'),
-            data_dict.get('bb_lower')
-        ))
-        self.conn.commit()
-    
-    def store_model_training(self, training_data):
-        """Store model training results."""
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            INSERT INTO model_training (
-                timestamp, model_type, accuracy, precision_score, recall_score,
-                f1_score, training_samples, parameters
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            datetime.now().isoformat(),
-            training_data['model_type'],
-            training_data.get('accuracy'),
-            training_data.get('precision'),
-            training_data.get('recall'),
-            training_data.get('f1'),
-            training_data['training_samples'],
-            json.dumps(training_data.get('parameters', {}))
-        ))
-        self.conn.commit()
-    
-    def get_training_data(self, instrument=None, min_samples=100):
-        """Get historical data for model training."""
-        query = '''
-            SELECT timestamp, instrument, open, high, low, close, volume,
-                   rsi, macd, macd_signal, atr, bb_upper, bb_lower
-            FROM market_data
-        '''
-        params = []
+        ''', (exit_price, pnl, trade_id))
         
-        if instrument:
-            query += ' WHERE instrument = ?'
-            params.append(instrument)
-        
-        query += ' ORDER BY timestamp DESC LIMIT ?'
-        params.append(min_samples * 2)  # Get more data for feature engineering
-        
-        df = pd.read_sql_query(query, self.conn, params=params)
-        return df
-    
-    def get_trade_history(self, limit=100):
-        """Get recent trade history."""
-        query = '''
-            SELECT * FROM trades
-            ORDER BY timestamp DESC
-            LIMIT ?
-        '''
-        df = pd.read_sql_query(query, self.conn, params=[limit])
-        return df
+        conn.commit()
+        conn.close()
     
     def get_performance_metrics(self, days=30):
-        """Calculate performance metrics from trade history."""
-        query = '''
-            SELECT * FROM trades
-            WHERE status = 'closed'
-            AND timestamp >= datetime('now', '-{} days')
-            ORDER BY timestamp
-        '''.format(days)
+        """Get performance metrics for position sizing."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
-        df = pd.read_sql_query(query, self.conn)
+        # Get recent trades
+        cursor.execute('''
+            SELECT pnl, entry_time FROM trades 
+            WHERE status = 'CLOSED' AND entry_time > datetime('now', '-{} days')
+            ORDER BY entry_time DESC
+        '''.format(days))
         
-        if len(df) == 0:
-            return {}
+        trades = cursor.fetchall()
+        conn.close()
         
-        total_trades = len(df)
-        winning_trades = len(df[df['profit_loss'] > 0])
-        losing_trades = len(df[df['profit_loss'] < 0])
+        if not trades:
+            return {'total_trades': 0, 'win_rate': 0.5, 'avg_win': 0.0, 'avg_loss': 0.0, 'sharpe': 0.0}
         
-        metrics = {
-            'total_trades': total_trades,
-            'winning_trades': winning_trades,
-            'losing_trades': losing_trades,
-            'win_rate': winning_trades / total_trades if total_trades > 0 else 0,
-            'total_profit': df['profit_loss'].sum(),
-            'average_profit': df[df['profit_loss'] > 0]['profit_loss'].mean() if winning_trades > 0 else 0,
-            'average_loss': df[df['profit_loss'] < 0]['profit_loss'].mean() if losing_trades > 0 else 0,
-            'largest_win': df['profit_loss'].max() if total_trades > 0 else 0,
-            'largest_loss': df['profit_loss'].min() if total_trades > 0 else 0
+        pnls = [trade[0] for trade in trades if trade[0] is not None]
+        if not pnls:
+            return {'total_trades': 0, 'win_rate': 0.5, 'avg_win': 0.0, 'avg_loss': 0.0, 'sharpe': 0.0}
+        
+        wins = [p for p in pnls if p > 0]
+        losses = [p for p in pnls if p <= 0]
+        
+        win_rate = len(wins) / len(pnls) if pnls else 0.5
+        avg_win = sum(wins) / len(wins) if wins else 0.0
+        avg_loss = sum(losses) / len(losses) if losses else 0.0
+        
+        # Simple Sharpe ratio approximation
+        if len(pnls) > 1:
+            returns = pd.Series(pnls)
+            sharpe = returns.mean() / returns.std() if returns.std() > 0 else 0.0
+        else:
+            sharpe = 0.0
+        
+        return {
+            'total_trades': len(pnls),
+            'win_rate': win_rate,
+            'avg_win': avg_win,
+            'avg_loss': avg_loss,
+            'sharpe': sharpe
         }
-        
-        return metrics
     
-    def close(self):
-        """Close database connection."""
-        if self.conn:
-            self.conn.close()
-            logging.info("Database connection closed")
+    def get_recent_trades(self, limit=10):
+        """Get recent trades for analysis."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM trades ORDER BY entry_time DESC LIMIT ?
+        ''', (limit,))
+        
+        columns = [desc[0] for desc in cursor.description]
+        trades = cursor.fetchall()
+        conn.close()
+        
+        return [dict(zip(columns, trade)) for trade in trades]
