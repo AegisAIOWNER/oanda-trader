@@ -1,3 +1,4 @@
+print("DEBUG: Starting bot.py - before imports", flush=True)
 import oandapyV20
 import oandapyV20.endpoints.accounts as accounts
 import oandapyV20.endpoints.orders as orders
@@ -15,36 +16,52 @@ from position_sizing import PositionSizer
 from multi_timeframe import MultiTimeframeAnalyzer
 from error_recovery import ExponentialBackoff, api_circuit_breaker
 from adaptive_threshold import AdaptiveThresholdManager
+print("DEBUG: All imports completed successfully", flush=True)
 
 class OandaTradingBot:
     def __init__(self, enable_ml=True, enable_multiframe=True, position_sizing_method='fixed_percentage',
                  enable_adaptive_threshold=True):
+        print("DEBUG: Entering OandaTradingBot.__init__", flush=True)
+        print(f"DEBUG: Parameters - ML: {enable_ml}, Multiframe: {enable_multiframe}, "
+              f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}", flush=True)
         self.api = oandapyV20.API(access_token=API_KEY, environment=ENVIRONMENT)
         self.account_id = ACCOUNT_ID
         self.last_request_time = time.time()
         self.daily_pnl = 0.0
+        print("DEBUG: Basic attributes initialized", flush=True)
         
         # Exponential backoff for API calls (initialize before any API calls)
         self.api_backoff = ExponentialBackoff(base_delay=1.0, max_delay=30.0, max_retries=5)
+        print("DEBUG: Exponential backoff initialized, attempting to get balance...", flush=True)
         
         self.daily_start_balance = self.get_balance()
+        print(f"DEBUG: Balance retrieved: {self.daily_start_balance}", flush=True)
         
         # Initialize database
+        print("DEBUG: Initializing database...", flush=True)
         self.db = TradeDatabase()
+        print("DEBUG: Database initialized", flush=True)
         
         # Initialize ML predictor
+        print(f"DEBUG: Initializing ML predictor (enabled: {enable_ml})...", flush=True)
         self.enable_ml = enable_ml
         self.ml_predictor = MLPredictor() if enable_ml else None
+        print("DEBUG: ML predictor initialized", flush=True)
         
         # Initialize position sizer
+        print("DEBUG: Initializing position sizer...", flush=True)
         self.position_sizer = PositionSizer(method=position_sizing_method, risk_per_trade=0.02)
+        print("DEBUG: Position sizer initialized", flush=True)
         
         # Initialize multi-timeframe analyzer
+        print(f"DEBUG: Initializing multi-timeframe analyzer (enabled: {enable_multiframe})...", flush=True)
         self.enable_multiframe = enable_multiframe
         self.mtf_analyzer = MultiTimeframeAnalyzer(primary_timeframe='M5', 
                                                     confirmation_timeframe='H1') if enable_multiframe else None
+        print("DEBUG: Multi-timeframe analyzer initialized", flush=True)
         
         # Initialize adaptive threshold manager
+        print(f"DEBUG: Initializing adaptive threshold manager (enabled: {enable_adaptive_threshold})...", flush=True)
         self.enable_adaptive_threshold = enable_adaptive_threshold
         self.adaptive_threshold_mgr = AdaptiveThresholdManager(
             base_threshold=CONFIDENCE_THRESHOLD,
@@ -54,10 +71,12 @@ class OandaTradingBot:
             no_signal_cycles_trigger=ADAPTIVE_NO_SIGNAL_CYCLES,
             adjustment_step=ADAPTIVE_ADJUSTMENT_STEP
         ) if enable_adaptive_threshold else None
+        print("DEBUG: Adaptive threshold manager initialized", flush=True)
         
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
                      f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}")
+        print("DEBUG: OandaTradingBot.__init__ completed successfully", flush=True)
 
     def _rate_limited_request(self, endpoint):
         """Execute API request with rate limiting and exponential backoff."""
@@ -232,8 +251,10 @@ class OandaTradingBot:
             return STOP_LOSS_PIPS, TAKE_PROFIT_PIPS
 
     def run_cycle(self):
+        print("DEBUG: Entering run_cycle", flush=True)
         # Check daily loss limit first
         current_balance = self.get_balance()
+        print(f"DEBUG: Current balance in run_cycle: {current_balance}", flush=True)
         daily_loss_pct = (self.daily_start_balance - current_balance) / self.daily_start_balance
         
         if daily_loss_pct > MAX_DAILY_LOSS_PERCENT / 100:
@@ -318,11 +339,17 @@ class OandaTradingBot:
         return True
 
     def run(self, interval=CHECK_INTERVAL):
+        print(f"DEBUG: Entering run method with interval={interval}", flush=True)
         while True:
+            print("DEBUG: Starting new cycle iteration", flush=True)
             if not self.run_cycle():
+                print("DEBUG: run_cycle returned False, breaking loop", flush=True)
                 break
+            print(f"DEBUG: Cycle completed, sleeping for {interval} seconds", flush=True)
             time.sleep(interval)
 
 if __name__ == '__main__':
+    print("DEBUG: In main block, about to create OandaTradingBot", flush=True)
     bot = OandaTradingBot(enable_ml=False)
+    print("DEBUG: Bot created successfully, about to call bot.run()", flush=True)
     bot.run()

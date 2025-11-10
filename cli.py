@@ -1,3 +1,4 @@
+print("DEBUG: Starting cli.py - before imports", flush=True)
 import click
 import pandas as pd
 from bot import OandaTradingBot
@@ -5,6 +6,7 @@ from backtest import backtest as run_backtest, walk_forward_analysis
 from ml_predictor import MLPredictor
 from database import TradeDatabase
 import logging
+print("DEBUG: CLI imports completed successfully", flush=True)
 
 @click.group()
 def cli():
@@ -21,18 +23,21 @@ def cli():
               help='Enable autonomous adaptive confidence threshold')
 def start(enable_ml, enable_multiframe, position_sizing, enable_adaptive_threshold):
     """Start the trading bot with configurable features."""
+    print("DEBUG: Entering start command", flush=True)
     click.echo(f"Starting trading bot...")
     click.echo(f"  ML Predictions: {enable_ml}")
     click.echo(f"  Multi-timeframe: {enable_multiframe}")
     click.echo(f"  Position Sizing: {position_sizing}")
     click.echo(f"  Adaptive Threshold: {enable_adaptive_threshold}")
     
+    print("DEBUG: About to create OandaTradingBot from CLI", flush=True)
     bot = OandaTradingBot(
         enable_ml=enable_ml,
         enable_multiframe=enable_multiframe,
         position_sizing_method=position_sizing,
         enable_adaptive_threshold=enable_adaptive_threshold
     )
+    print("DEBUG: Bot created from CLI, about to call bot.run()", flush=True)
     bot.run()
 
 @cli.command()
@@ -163,4 +168,5 @@ def stats(days):
     db.close()
 
 if __name__ == '__main__':
+    print("DEBUG: CLI main block - about to call cli()", flush=True)
     cli()
