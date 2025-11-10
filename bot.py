@@ -43,8 +43,8 @@ class OandaTradingBot:
                                                     confirmation_timeframe='H1') if enable_multiframe else None
         
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-        logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
-                    f"Position sizing: {position_sizing_method})\n"
+        logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, \
+                    Position sizing: {position_sizing_method})\n")
 
     def _rate_limited_request(self, endpoint):
         """Execute API request with rate limiting and exponential backoff."""
@@ -166,8 +166,8 @@ class OandaTradingBot:
                         # Adjust confidence based on ML prediction
                         # Weight: 70% original confidence, 30% ML prediction
                         confidence = confidence * 0.7 + ml_prediction * 0.3
-                        logging.info(f"{instrument}: ML prediction {ml_prediction:.2f}, "
-                                    f"adjusted confidence {confidence:.2f}")
+                        logging.info(f"{instrument}: ML prediction {ml_prediction:.2f}, \
+                                    adjusted confidence {confidence:.2f}")
                     except Exception as e:
                         logging.warning(f"ML prediction failed for {instrument}: {e}")
                 
@@ -256,8 +256,8 @@ class OandaTradingBot:
                 confidence=confidence
             )
             
-            logging.info(f"Placing order for {instrument}: {signal} with SL={sl:.4f}, TP={tp:.4f}, "
-                        f"units={units}, risk={risk_pct*100:.2f}%")
+            logging.info(f"Placing order for {instrument}: {signal} with SL={sl:.4f}, TP={tp:.4f}, \
+                        units={units}, risk={risk_pct*100:.2f}%")
             
             # Place order
             response = self.place_order(instrument, signal, units, sl, tp)
