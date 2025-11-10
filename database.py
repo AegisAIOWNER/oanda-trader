@@ -55,17 +55,19 @@ class TradeDatabase:
             trade_data['signal'],
             trade_data['confidence'],
             trade_data['entry_price'],
-            trade_data['stop_loss'],
-            trade_data['take_profit'],
+            trade_data.get('stop_loss', 0.0),
+            trade_data.get('take_profit', 0.0),
             trade_data['units'],
             trade_data.get('atr', 0.0),
             trade_data.get('ml_prediction', 0.5),
             trade_data.get('position_size_pct', 0.0)
         ))
         
+        trade_id = cursor.lastrowid
         conn.commit()
         conn.close()
         logging.info(f"Trade stored in database: {trade_data['instrument']} {trade_data['signal']}")
+        return trade_id
     
     def update_trade_exit(self, trade_id, exit_price, pnl):
         """Update trade with exit information."""
@@ -125,6 +127,20 @@ class TradeDatabase:
             'sharpe': sharpe
         }
     
+    def update_trade(self, trade_id, exit_price, pnl, status='closed'):
+        """Update trade with exit information (alias for update_trade_exit)."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE trades 
+            SET exit_price = ?, exit_time = CURRENT_TIMESTAMP, pnl = ?, status = ?
+            WHERE id = ?
+        ''', (exit_price, pnl, status.upper(), trade_id))
+        
+        conn.commit()
+        conn.close()
+    
     def get_recent_trades(self, limit=10):
         """Get recent trades for analysis."""
         conn = sqlite3.connect(self.db_path)
@@ -139,3 +155,7 @@ class TradeDatabase:
         conn.close()
         
         return [dict(zip(columns, trade)) for trade in trades]
+    
+    def close(self):
+        """Close method for compatibility with tests (no-op since we use connection per operation)."""
+        pass
