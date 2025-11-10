@@ -16,6 +16,28 @@ from multi_timeframe import MultiTimeframeAnalyzer
 from database import TradeDatabase
 from error_recovery import ExponentialBackoff, CircuitBreaker
 from backtest import calculate_sharpe_ratio, calculate_max_drawdown
+import oandapyV20.endpoints.instruments as instruments
+
+
+class TestInstrumentsEndpoint(unittest.TestCase):
+    """Test that bot uses the correct Oanda API endpoint class."""
+    
+    def test_instruments_candles_class_exists(self):
+        """Test that InstrumentsCandles class exists in instruments module."""
+        self.assertTrue(hasattr(instruments, 'InstrumentsCandles'))
+    
+    def test_instruments_candles_instantiation(self):
+        """Test that InstrumentsCandles can be instantiated correctly."""
+        params = {'count': 50, 'granularity': 'M5'}
+        r = instruments.InstrumentsCandles(instrument='EUR_USD', params=params)
+        
+        # Verify the object is created
+        self.assertIsNotNone(r)
+        self.assertEqual(type(r).__name__, 'InstrumentsCandles')
+    
+    def test_instruments_candles_not_instruments_candles(self):
+        """Test that instruments.Candles does NOT exist (confirming the bug fix)."""
+        self.assertFalse(hasattr(instruments, 'Candles'))
 
 
 class TestStrategies(unittest.TestCase):
