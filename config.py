@@ -33,7 +33,7 @@ VOLUME_MA_PERIOD = 20  # Period for volume moving average
 MIN_VOLUME_RATIO = 1.2  # Minimum volume ratio for confirmation (current volume / avg volume)
 
 # Machine Learning settings
-ENABLE_ML = True  # Enable ML predictions
+ENABLE_ML = False  # Enable ML predictions (disabled by default until model is trained)
 ML_MODEL_PATH = 'models/rf_model.pkl'  # Path to store ML model
 ML_MIN_TRAINING_SAMPLES = 200  # Minimum samples required for training
 
