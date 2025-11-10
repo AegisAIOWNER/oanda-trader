@@ -43,8 +43,8 @@ class OandaTradingBot:
                                                     confirmation_timeframe='H1') if enable_multiframe else None
         
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-        logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, \
-                    Position sizing: {position_sizing_method})\n"
+        logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
+                     f"Position sizing: {position_sizing_method}")
 
     def _rate_limited_request(self, endpoint):
         """Execute API request with rate limiting and exponential backoff."""
