@@ -21,6 +21,10 @@ class OandaTradingBot:
         self.account_id = ACCOUNT_ID
         self.last_request_time = time.time()
         self.daily_pnl = 0.0
+        
+        # Exponential backoff for API calls (initialize before any API calls)
+        self.api_backoff = ExponentialBackoff(base_delay=1.0, max_delay=30.0, max_retries=5)
+        
         self.daily_start_balance = self.get_balance()
         
         # Initialize database
@@ -38,12 +42,9 @@ class OandaTradingBot:
         self.mtf_analyzer = MultiTimeframeAnalyzer(primary_timeframe='M5', 
                                                     confirmation_timeframe='H1') if enable_multiframe else None
         
-        # Exponential backoff for API calls
-        self.api_backoff = ExponentialBackoff(base_delay=1.0, max_delay=30.0, max_retries=5)
-        
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
-                    f"Position sizing: {position_sizing_method}")
+                    f"Position sizing: {position_sizing_method})\n"
 
     def _rate_limited_request(self, endpoint):
         """Execute API request with rate limiting and exponential backoff."""
@@ -166,7 +167,7 @@ class OandaTradingBot:
                         # Weight: 70% original confidence, 30% ML prediction
                         confidence = confidence * 0.7 + ml_prediction * 0.3
                         logging.info(f"{instrument}: ML prediction {ml_prediction:.2f}, "
-                                   f"adjusted confidence {confidence:.2f}")
+                                    f"adjusted confidence {confidence:.2f}")
                     except Exception as e:
                         logging.warning(f"ML prediction failed for {instrument}: {e}")
                 
