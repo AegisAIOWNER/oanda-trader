@@ -31,3 +31,18 @@ ATR_STOP_MULTIPLIER = 1.5  # Multiplier for ATR-based stop loss
 ATR_PROFIT_MULTIPLIER = 2.5  # Multiplier for ATR-based take profit
 VOLUME_MA_PERIOD = 20  # Period for volume moving average
 MIN_VOLUME_RATIO = 1.2  # Minimum volume ratio for confirmation (current volume / avg volume)
+
+# Machine Learning settings
+ENABLE_ML = True  # Enable ML predictions
+ML_MODEL_PATH = 'models/rf_model.pkl'  # Path to store ML model
+ML_MIN_TRAINING_SAMPLES = 200  # Minimum samples required for training
+
+# Position Sizing settings
+POSITION_SIZING_METHOD = 'fixed_percentage'  # 'fixed_percentage' or 'kelly_criterion'
+RISK_PER_TRADE = 0.02  # 2% risk per trade for fixed percentage method
+KELLY_FRACTION = 0.25  # Use 25% of Kelly Criterion (quarter Kelly for safety)
+
+# Multi-timeframe settings
+ENABLE_MULTIFRAME = True  # Enable multi-timeframe confirmation
+PRIMARY_TIMEFRAME = 'M5'  # Primary timeframe for signals
+CONFIRMATION_TIMEFRAME = 'H1'  # Higher timeframe for confirmation

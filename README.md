@@ -12,16 +12,54 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 
 ## Features
 
+### Core Trading Features
 - **Advanced Scalping Strategy**: Combines MACD, RSI, Bollinger Bands, ATR, and volume analysis
 - **Dynamic Pair Selection**: Scans multiple pairs and trades the strongest signal
 - **Confidence Scoring**: 0.0-1.0 scoring system filters weak signals
 - **Adaptive Risk Management**: ATR-based stop losses and take profits
+
+### Machine Learning Integration
+- **ML Predictions**: Random Forest classifier predicts signal success probability
+- **Confidence Boosting**: ML predictions integrated into confidence scoring (70% strategy, 30% ML)
+- **Automatic Training**: Model trains on historical OHLCV data
+- **Model Persistence**: Saves and loads trained models for continuous improvement
+
+### Enhanced Position Sizing
+- **Kelly Criterion**: Optimal position sizing based on historical performance
+- **Fixed Percentage**: Conservative 1-2% risk per trade
+- **Confidence Adjustment**: Position size scales with signal confidence
+- **Dynamic Calculation**: Adapts to account balance and market volatility
+
+### Multi-Timeframe Analysis
+- **H1 Confirmation**: Higher timeframe (1-hour) confirms M5 signals
+- **Trend Detection**: Uses multiple indicators for trend determination
+- **Signal Filtering**: Rejects signals contradicting higher timeframe trend
+- **Confidence Boosting**: Strong confirmations increase confidence by 15%
+
+### Advanced Backtesting
+- **Walk-Forward Testing**: Robust validation with train/test periods
+- **Comprehensive Metrics**: Sharpe ratio, max drawdown, win rate, and more
+- **Strategy Comparison**: Test multiple strategies side-by-side
+- **Performance Analytics**: Detailed trade analysis and statistics
+
+### Error Recovery & Reliability
+- **Exponential Backoff**: Intelligent retry logic for API failures
+- **Circuit Breaker**: Prevents cascading failures
 - **Rate Limiting Compliance**: Respects Oanda's 30 req/sec limit
+- **Graceful Degradation**: Falls back when optional features fail
+
+### Data Persistence
+- **SQLite Database**: Stores complete trade history
+- **Performance Tracking**: Real-time metrics and analytics
+- **Model Training Data**: Historical data for ML retraining
+- **Trade Analysis**: Query and analyze past performance
+
+### Additional Features
 - **Margin Checks**: Automatic margin availability verification
 - **Daily Loss Limits**: Stops trading if daily loss exceeds 6%
 - **Multiple Instruments**: Supports 8+ currency pairs
-- **Backtesting**: Test strategies on historical data
-- **CLI Interface**: Easy command-line control
+- **CLI Interface**: Easy command-line control with rich options
+- **Comprehensive Testing**: 17 unit tests covering core functionality
 
 ## Strategies
 
@@ -73,19 +111,79 @@ MAX_DAILY_LOSS_PERCENT = 6.0  # Daily loss limit
 ## Usage
 
 ### Start Trading Bot
+
+**Basic usage:**
 ```bash
 python cli.py start
-# or
+```
+
+**With custom options:**
+```bash
+# Start with all features enabled
+python cli.py start --enable-ml --enable-multiframe --position-sizing fixed_percentage
+
+# Start without ML (faster startup)
+python cli.py start --no-ml
+
+# Use Kelly Criterion for position sizing (requires trade history)
+python cli.py start --position-sizing kelly_criterion
+```
+
+**Direct Python:**
+```bash
 python bot.py
 ```
 
-### Run Backtest
+### Backtesting
+
+**Run standard backtest:**
 ```bash
-python cli.py backtest --instrument EUR_USD
+python cli.py backtest --instrument EUR_USD --strategy advanced_scalp --cash 10000
 ```
 
-### Custom Strategy
-Edit `config.py` and change `STRATEGY` to one of: `advanced_scalp`, `scalping_rsi`, `ma_crossover`
+**Run walk-forward analysis:**
+```bash
+python cli.py walkforward --instrument EUR_USD --train-period 252 --test-period 63
+```
+
+### Machine Learning
+
+**Train ML model:**
+```bash
+python cli.py train-ml --min-samples 200
+```
+
+The bot automatically collects training data as it trades. Train the model periodically for better predictions.
+
+### Performance Statistics
+
+**View trading stats:**
+```bash
+python cli.py stats --days 30
+```
+
+### Configuration
+
+Edit `config.py` to customize:
+
+```python
+# ML Settings
+ENABLE_ML = True
+ML_MODEL_PATH = 'models/rf_model.pkl'
+
+# Position Sizing
+POSITION_SIZING_METHOD = 'fixed_percentage'  # or 'kelly_criterion'
+RISK_PER_TRADE = 0.02  # 2% per trade
+
+# Multi-timeframe
+ENABLE_MULTIFRAME = True
+PRIMARY_TIMEFRAME = 'M5'
+CONFIRMATION_TIMEFRAME = 'H1'
+
+# Strategy
+STRATEGY = 'advanced_scalp'
+CONFIDENCE_THRESHOLD = 0.8
+```
 
 ## How It Works
 
@@ -119,8 +217,69 @@ Built-in safety features:
 - **ATR-based Stops**: Adaptive to market volatility
 - **Confidence Threshold**: Filters low-probability setups
 
+## Architecture
+
+### Component Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Trading Bot                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │   Strategies │  │  ML Predictor │  │ Multi-Frame  │     │
+│  │   (Advanced  │──│  (Random      │──│  Analyzer    │     │
+│  │    Scalp)    │  │   Forest)     │  │  (H1 Conf.)  │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘     │
+│         │                  │                  │             │
+│         └──────────────────┴──────────────────┘             │
+│                            │                                │
+│                  ┌─────────▼─────────┐                      │
+│                  │  Signal Generator  │                     │
+│                  │  (Confidence 0-1)  │                     │
+│                  └─────────┬──────────┘                     │
+│                            │                                │
+│                  ┌─────────▼─────────┐                      │
+│                  │  Position Sizer   │                      │
+│                  │ (Kelly/Fixed %)   │                      │
+│                  └─────────┬──────────┘                     │
+│                            │                                │
+│                  ┌─────────▼─────────┐                      │
+│                  │   Order Manager   │                      │
+│                  │ (with Backoff)    │                      │
+│                  └─────────┬──────────┘                     │
+│                            │                                │
+│                  ┌─────────▼─────────┐                      │
+│                  │   Oanda API       │                      │
+│                  └───────────────────┘                      │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                  ┌─────────▼─────────┐
+                  │  SQLite Database  │
+                  │  - Trade History  │
+                  │  - Market Data    │
+                  │  - ML Training    │
+                  └───────────────────┘
+```
+
 ## Requirements
 
 - Python 3.8+
 - Oanda API account (practice or live)
+- SQLite3 (included with Python)
 - Dependencies listed in requirements.txt
+
+## Testing
+
+Run unit tests to verify functionality:
+
+```bash
+python -m unittest test_trading_bot -v
+```
+
+Test coverage includes:
+- Strategy signal generation
+- Position sizing calculations
+- ML model training and predictions
+- Multi-timeframe analysis
+- Database operations
+- Error recovery mechanisms
+- Backtesting metrics
