@@ -9,30 +9,62 @@ import logging
 from datetime import datetime
 from config import *
 from strategies import get_signal, get_signal_with_confidence
+from database import TradeDatabase
+from ml_predictor import MLPredictor
+from position_sizing import PositionSizer
+from multi_timeframe import MultiTimeframeAnalyzer
+from error_recovery import ExponentialBackoff, api_circuit_breaker
 
 class OandaTradingBot:
-    def __init__(self):
+    def __init__(self, enable_ml=True, enable_multiframe=True, position_sizing_method='fixed_percentage'):
         self.api = oandapyV20.API(access_token=API_KEY, environment=ENVIRONMENT)
         self.account_id = ACCOUNT_ID
         self.last_request_time = time.time()
         self.daily_pnl = 0.0
         self.daily_start_balance = self.get_balance()
+        
+        # Initialize database
+        self.db = TradeDatabase()
+        
+        # Initialize ML predictor
+        self.enable_ml = enable_ml
+        self.ml_predictor = MLPredictor() if enable_ml else None
+        
+        # Initialize position sizer
+        self.position_sizer = PositionSizer(method=position_sizing_method, risk_per_trade=0.02)
+        
+        # Initialize multi-timeframe analyzer
+        self.enable_multiframe = enable_multiframe
+        self.mtf_analyzer = MultiTimeframeAnalyzer(primary_timeframe='M5', 
+                                                    confirmation_timeframe='H1') if enable_multiframe else None
+        
+        # Exponential backoff for API calls
+        self.api_backoff = ExponentialBackoff(base_delay=1.0, max_delay=30.0, max_retries=5)
+        
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
+                    f"Position sizing: {position_sizing_method}")
 
     def _rate_limited_request(self, endpoint):
+        """Execute API request with rate limiting and exponential backoff."""
         current_time = time.time()
         elapsed = current_time - self.last_request_time
         if elapsed < RATE_LIMIT_DELAY:
             time.sleep(RATE_LIMIT_DELAY - elapsed)
         self.last_request_time = current_time
-        try:
-            return self.api.request(endpoint)
-        except Exception as e:
-            if '429' in str(e):
-                logging.warning("Rate limit hit, sleeping longer.")
-                time.sleep(RATE_LIMIT_DELAY * 2)
-                return self._rate_limited_request(endpoint)
-            raise
+        
+        def _execute_request():
+            try:
+                # Use circuit breaker to prevent cascading failures
+                return api_circuit_breaker.call(self.api.request, endpoint)
+            except Exception as e:
+                if '429' in str(e):
+                    logging.warning("Rate limit hit, will retry with backoff.")
+                    raise  # Let exponential backoff handle retry
+                raise
+        
+        # Execute with exponential backoff
+        return self.api_backoff.execute_with_retry(_execute_request)
 
     def get_balance(self):
         r = accounts.AccountSummary(accountID=self.account_id)
@@ -97,12 +129,13 @@ class OandaTradingBot:
         
         for instrument in pairs_to_scan:
             try:
-                df = self.get_prices(instrument)
+                # Get primary timeframe data (M5)
+                df_primary = self.get_prices(instrument, count=50, granularity=GRANULARITY)
                 
                 if STRATEGY == 'advanced_scalp':
                     # Get signal with confidence and ATR
                     signal, confidence, atr = get_signal_with_confidence(
-                        df, 
+                        df_primary, 
                         STRATEGY,
                         atr_period=ATR_PERIOD,
                         volume_ma_period=VOLUME_MA_PERIOD,
@@ -110,16 +143,41 @@ class OandaTradingBot:
                     )
                 else:
                     # Legacy strategy support
-                    signal = get_signal(df, STRATEGY)
+                    signal = get_signal(df_primary, STRATEGY)
                     confidence = 1.0 if signal else 0.0
                     atr = 0.0
+                
+                # Multi-timeframe confirmation (if enabled and signal exists)
+                if signal and self.enable_multiframe:
+                    try:
+                        df_h1 = self.get_prices(instrument, count=50, granularity='H1')
+                        signal, confidence, atr = self.mtf_analyzer.confirm_signal(
+                            signal, confidence, atr, df_h1, STRATEGY
+                        )
+                    except Exception as e:
+                        logging.warning(f"Multi-timeframe analysis failed for {instrument}: {e}")
+                
+                # ML prediction boost (if enabled and signal exists)
+                ml_prediction = 0.5  # Default neutral
+                if signal and self.enable_ml and self.ml_predictor:
+                    try:
+                        ml_prediction = self.ml_predictor.predict_probability(df_primary)
+                        # Adjust confidence based on ML prediction
+                        # Weight: 70% original confidence, 30% ML prediction
+                        confidence = confidence * 0.7 + ml_prediction * 0.3
+                        logging.info(f"{instrument}: ML prediction {ml_prediction:.2f}, "
+                                   f"adjusted confidence {confidence:.2f}")
+                    except Exception as e:
+                        logging.warning(f"ML prediction failed for {instrument}: {e}")
                 
                 if signal and confidence >= CONFIDENCE_THRESHOLD:
                     signals.append({
                         'instrument': instrument,
                         'signal': signal,
                         'confidence': confidence,
-                        'atr': atr
+                        'atr': atr,
+                        'ml_prediction': ml_prediction,
+                        'df': df_primary  # Keep for position sizing calculation
                     })
                     logging.info(f"{instrument}: {signal} signal with confidence {confidence:.2f}")
                 elif signal:
@@ -181,14 +239,45 @@ class OandaTradingBot:
             instrument = best_signal['instrument']
             signal = best_signal['signal']
             atr = best_signal['atr']
+            confidence = best_signal['confidence']
+            ml_prediction = best_signal.get('ml_prediction', 0.5)
             
             # Calculate ATR-based stops
             sl, tp = self.calculate_atr_stops(atr, signal)
             
-            # Place order for the best signal only
-            units = DEFAULT_UNITS
-            logging.info(f"Placing order for {instrument}: {signal} with SL={sl:.4f}, TP={tp:.4f}")
-            self.place_order(instrument, signal, units, sl, tp)
+            # Calculate optimal position size
+            performance_metrics = self.db.get_performance_metrics(days=30)
+            units, risk_pct = self.position_sizer.calculate_position_size(
+                balance=current_balance,
+                stop_loss_pips=sl,
+                pip_value=10,
+                performance_metrics=performance_metrics,
+                confidence=confidence
+            )
+            
+            logging.info(f"Placing order for {instrument}: {signal} with SL={sl:.4f}, TP={tp:.4f}, "
+                        f"units={units}, risk={risk_pct*100:.2f}%")
+            
+            # Place order
+            response = self.place_order(instrument, signal, units, sl, tp)
+            
+            # Store trade in database
+            if response:
+                entry_price = best_signal['df']['close'].iloc[-1]
+                trade_data = {
+                    'instrument': instrument,
+                    'signal': signal,
+                    'confidence': confidence,
+                    'entry_price': entry_price,
+                    'stop_loss': sl,
+                    'take_profit': tp,
+                    'units': units,
+                    'atr': atr,
+                    'ml_prediction': ml_prediction,
+                    'position_size_pct': risk_pct
+                }
+                self.db.store_trade(trade_data)
+                logging.info(f"Trade stored in database")
         
         return True
 

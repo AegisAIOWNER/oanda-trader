@@ -26,23 +26,26 @@ def ma_crossover(df):
     return None
 
 def calculate_indicators(df, atr_period=14, volume_ma_period=20):
-    """Calculate all technical indicators for advanced_scalp strategy."""
+    """
+    Calculate all technical indicators for advanced_scalp strategy.
+    Optimized with vectorized operations for better performance.
+    """
     if len(df) < max(26, atr_period, volume_ma_period):
         return None
     
     # Make a copy to avoid modifying original
     df = df.copy()
     
-    # RSI
+    # Vectorized RSI calculation using pandas_ta
     df['rsi'] = ta.rsi(df['close'], length=14)
     
-    # MACD
+    # Vectorized MACD calculation
     macd = ta.macd(df['close'], fast=12, slow=26, signal=9)
     df['macd'] = macd['MACD_12_26_9']
     df['macd_signal'] = macd['MACDs_12_26_9']
     df['macd_hist'] = macd['MACDh_12_26_9']
     
-    # Bollinger Bands
+    # Vectorized Bollinger Bands calculation
     bbands = ta.bbands(df['close'], length=20, std=2)
     # pandas_ta returns columns with format BBU_20_2.0_2.0 (length_std_mamode)
     bb_cols = [col for col in bbands.columns if col.startswith('BBL_')]
@@ -54,12 +57,14 @@ def calculate_indicators(df, atr_period=14, volume_ma_period=20):
     bb_cols = [col for col in bbands.columns if col.startswith('BBU_')]
     if bb_cols:
         df['bb_upper'] = bbands[bb_cols[0]]
+    
+    # Vectorized Bollinger width calculation
     df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
     
-    # ATR for volatility
+    # Vectorized ATR calculation
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=atr_period)
     
-    # Volume analysis
+    # Vectorized volume analysis
     df['volume_ma'] = df['volume'].rolling(volume_ma_period).mean()
     df['volume_ratio'] = df['volume'] / df['volume_ma']
     
