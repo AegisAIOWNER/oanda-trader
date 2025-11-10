@@ -1,11 +1,11 @@
 import pandas as pd
-import pandas_ta as ta
+import ta
 import numpy as np
 
 def scalping_rsi(df):
     if len(df) < 14:
         return None
-    rsi = ta.rsi(df['close'], length=14)
+    rsi = ta.rsi(df['close'], period=14)
     if rsi.iloc[-1] < 30:
         return 'BUY'
     elif rsi.iloc[-1] > 70:
@@ -36,33 +36,26 @@ def calculate_indicators(df, atr_period=14, volume_ma_period=20):
     # Make a copy to avoid modifying original
     df = df.copy()
     
-    # Vectorized RSI calculation using pandas_ta
-    df['rsi'] = ta.rsi(df['close'], length=14)
+    # Vectorized RSI calculation using ta
+    df['rsi'] = ta.rsi(df['close'], period=14)
     
     # Vectorized MACD calculation
-    macd = ta.macd(df['close'], fast=12, slow=26, signal=9)
-    df['macd'] = macd['MACD_12_26_9']
-    df['macd_signal'] = macd['MACDs_12_26_9']
-    df['macd_hist'] = macd['MACDh_12_26_9']
+    macd = ta.macd(df['close'])
+    df['macd'] = macd['macd']
+    df['macd_signal'] = macd['signal']
+    df['macd_hist'] = macd['histogram']
     
     # Vectorized Bollinger Bands calculation
-    bbands = ta.bbands(df['close'], length=20, std=2)
-    # pandas_ta returns columns with format BBU_20_2.0_2.0 (length_std_mamode)
-    bb_cols = [col for col in bbands.columns if col.startswith('BBL_')]
-    if bb_cols:
-        df['bb_lower'] = bbands[bb_cols[0]]
-    bb_cols = [col for col in bbands.columns if col.startswith('BBM_')]
-    if bb_cols:
-        df['bb_middle'] = bbands[bb_cols[0]]
-    bb_cols = [col for col in bbands.columns if col.startswith('BBU_')]
-    if bb_cols:
-        df['bb_upper'] = bbands[bb_cols[0]]
+    bbands = ta.bbands(df['close'])
+    df['bb_lower'] = bbands['lower']
+    df['bb_middle'] = bbands['middle']
+    df['bb_upper'] = bbands['upper']
     
     # Vectorized Bollinger width calculation
     df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
     
     # Vectorized ATR calculation
-    df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=atr_period)
+    df['atr'] = ta.atr(df['high'], df['low'], df['close'], period=atr_period)
     
     # Vectorized volume analysis
     df['volume_ma'] = df['volume'].rolling(volume_ma_period).mean()
