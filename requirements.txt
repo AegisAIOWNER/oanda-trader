@@ -4,6 +4,9 @@ numpy
 backtrader
 python-dotenv
 click
-pandas-ta
+ta
 scikit-learn
 requests
+pytz
+matplotlib
+scipy
