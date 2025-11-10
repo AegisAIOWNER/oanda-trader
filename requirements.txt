@@ -1,0 +1,6 @@
+oandapyV20
+pandas
+numpy
+backtrader
+python-dotenv
+click
