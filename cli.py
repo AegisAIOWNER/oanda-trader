@@ -12,7 +12,7 @@ def cli():
     pass
 
 @cli.command()
-@click.option('--enable-ml/--no-ml', default=True, help='Enable ML predictions')
+@click.option('--enable-ml/--no-ml', default=False, help='Enable ML predictions')
 @click.option('--enable-multiframe/--no-multiframe', default=True, help='Enable multi-timeframe analysis')
 @click.option('--position-sizing', default='fixed_percentage', 
               type=click.Choice(['fixed_percentage', 'kelly_criterion']),

@@ -289,5 +289,5 @@ class OandaTradingBot:
             time.sleep(interval)
 
 if __name__ == '__main__':
-    bot = OandaTradingBot()
+    bot = OandaTradingBot(enable_ml=False)
     bot.run()
