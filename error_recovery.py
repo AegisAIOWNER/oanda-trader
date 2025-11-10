@@ -34,34 +34,35 @@ class ExponentialBackoff:
 class CircuitBreaker:
     """Circuit breaker pattern to prevent cascading failures."""
     
-    def __init__(self, failure_threshold=5, recovery_timeout=60.0, expected_exception=Exception):
+    def __init__(self, failure_threshold=5, recovery_timeout=60.0, timeout=None, expected_exception=Exception):
         self.failure_threshold = failure_threshold
-        self.recovery_timeout = recovery_timeout
+        # Support both 'timeout' and 'recovery_timeout' for backwards compatibility
+        self.recovery_timeout = timeout if timeout is not None else recovery_timeout
         self.expected_exception = expected_exception
         self.failure_count = 0
         self.last_failure_time = None
-        self.state = 'CLOSED'  # CLOSED, OPEN, HALF_OPEN
+        self.state = 'closed'  # closed, open, half_open
     
     def call(self, func, *args, **kwargs):
         """Execute function with circuit breaker protection."""
-        if self.state == 'OPEN':
+        if self.state == 'open':
             if time.time() - self.last_failure_time > self.recovery_timeout:
-                self.state = 'HALF_OPEN'
+                self.state = 'half_open'
             else:
-                raise Exception("Circuit breaker is OPEN")
+                raise Exception("Circuit breaker is open")
         
         try:
             result = func(*args, **kwargs)
-            if self.state == 'HALF_OPEN':
-                self.state = 'CLOSED'
+            if self.state == 'half_open':
+                self.state = 'closed'
                 self.failure_count = 0
             return result
         except self.expected_exception as e:
             self.failure_count += 1
             self.last_failure_time = time.time()
             if self.failure_count >= self.failure_threshold:
-                self.state = 'OPEN'
-                logging.warning("Circuit breaker OPENED due to repeated failures")
+                self.state = 'open'
+                logging.warning("Circuit breaker opened due to repeated failures")
             raise e
 
 # Global circuit breaker instance

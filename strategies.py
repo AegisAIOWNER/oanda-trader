@@ -5,7 +5,8 @@ import numpy as np
 def scalping_rsi(df):
     if len(df) < 14:
         return None
-    rsi = ta.rsi(df['close'], period=14)
+    rsi_indicator = ta.momentum.RSIIndicator(close=df['close'], window=14)
+    rsi = rsi_indicator.rsi()
     if rsi.iloc[-1] < 30:
         return 'BUY'
     elif rsi.iloc[-1] > 70:
@@ -37,25 +38,27 @@ def calculate_indicators(df, atr_period=14, volume_ma_period=20):
     df = df.copy()
     
     # Vectorized RSI calculation using ta
-    df['rsi'] = ta.rsi(df['close'], period=14)
+    rsi_indicator = ta.momentum.RSIIndicator(close=df['close'], window=14)
+    df['rsi'] = rsi_indicator.rsi()
     
     # Vectorized MACD calculation
-    macd = ta.macd(df['close'])
-    df['macd'] = macd['macd']
-    df['macd_signal'] = macd['signal']
-    df['macd_hist'] = macd['histogram']
+    macd_indicator = ta.trend.MACD(close=df['close'])
+    df['macd'] = macd_indicator.macd()
+    df['macd_signal'] = macd_indicator.macd_signal()
+    df['macd_hist'] = macd_indicator.macd_diff()
     
     # Vectorized Bollinger Bands calculation
-    bbands = ta.bbands(df['close'])
-    df['bb_lower'] = bbands['lower']
-    df['bb_middle'] = bbands['middle']
-    df['bb_upper'] = bbands['upper']
+    bbands_indicator = ta.volatility.BollingerBands(close=df['close'], window=20, window_dev=2)
+    df['bb_lower'] = bbands_indicator.bollinger_lband()
+    df['bb_middle'] = bbands_indicator.bollinger_mavg()
+    df['bb_upper'] = bbands_indicator.bollinger_hband()
     
     # Vectorized Bollinger width calculation
     df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
     
     # Vectorized ATR calculation
-    df['atr'] = ta.atr(df['high'], df['low'], df['close'], period=atr_period)
+    atr_indicator = ta.volatility.AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=atr_period)
+    df['atr'] = atr_indicator.average_true_range()
     
     # Vectorized volume analysis
     df['volume_ma'] = df['volume'].rolling(volume_ma_period).mean()
