@@ -1,7 +1,7 @@
 import oandapyV20
 import oandapyV20.endpoints.accounts as accounts
 import oandapyV20.endpoints.orders as orders
-import oandapyV20.endpoints.pricing as pricing
+import oandapyV20.endpoints.instruments as instruments
 import oandapyV20.endpoints.positions as positions
 import pandas as pd
 import time
@@ -44,7 +44,7 @@ class OandaTradingBot:
         
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, \
-                    Position sizing: {position_sizing_method})\n")
+                    Position sizing: {position_sizing_method})\n"
 
     def _rate_limited_request(self, endpoint):
         """Execute API request with rate limiting and exponential backoff."""
@@ -81,9 +81,9 @@ class OandaTradingBot:
 
     def get_prices(self, instrument, count=50, granularity=GRANULARITY):
         params = {'count': count, 'granularity': granularity}
-        r = pricing.PricingCandles(instrument=instrument, params=params)
+        r = instruments.Candles(instrument=instrument, params=params)
         response = self._rate_limited_request(r)
-        candles = response['candles']
+        candles = response.get('candles', [])
         data = []
         for c in candles:
             if c['complete']:
