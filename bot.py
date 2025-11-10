@@ -81,7 +81,7 @@ class OandaTradingBot:
 
     def get_prices(self, instrument, count=50, granularity=GRANULARITY):
         params = {'count': count, 'granularity': granularity}
-        r = instruments.Candles(instrument=instrument, params=params)
+        r = instruments.InstrumentsCandles(instrument=instrument, params=params)
         response = self._rate_limited_request(r)
         candles = response.get('candles', [])
         data = []
