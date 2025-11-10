@@ -5,7 +5,67 @@ This document summarizes all enhancements made to the trading bot to improve pro
 
 ## Key Enhancements
 
-### 1. Machine Learning Integration (ml_predictor.py)
+### 1. Autonomous Adaptive Threshold (adaptive_threshold.py) **NEW!**
+**Purpose:** Make the bot "think" like an AI by autonomously adjusting confidence threshold based on performance
+
+**Features:**
+- Signal frequency tracking - lowers threshold after multiple cycles without signals
+- Performance-based adjustment - adjusts based on win rate and profit factor
+- Decision logging - stores all adjustments with reasoning in database
+- Configurable safety bounds to prevent extreme adjustments
+- Transparent reasoning for every adjustment
+
+**Adjustment Logic:**
+- **No signals for 5+ cycles:** Lower threshold by 2% to increase signal frequency
+- **High performance (65%+ win rate, 1.5+ profit factor):** Raise threshold to be more selective
+- **Poor performance (45%- win rate, 0.8- profit factor):** Raise threshold for higher quality signals
+- **Marginal performance (50-55% win rate, ~1.0 profit factor):** Lower threshold for more opportunities
+
+**Usage:**
+```python
+manager = AdaptiveThresholdManager(
+    base_threshold=0.8,
+    db=database,
+    min_threshold=0.5,
+    max_threshold=0.95,
+    no_signal_cycles_trigger=5,
+    adjustment_step=0.02
+)
+
+# After each cycle
+manager.update_on_cycle(signals_found=2)
+
+# After evaluating performance
+manager.update_on_trade_result(
+    trade_profitable=True,
+    recent_performance={'win_rate': 0.65, 'profit_factor': 1.5, 'total_trades': 10}
+)
+
+# Get current dynamic threshold
+current_threshold = manager.get_current_threshold()
+```
+
+**Configuration:**
+```python
+ENABLE_ADAPTIVE_THRESHOLD = True
+ADAPTIVE_MIN_THRESHOLD = 0.5
+ADAPTIVE_MAX_THRESHOLD = 0.95
+ADAPTIVE_NO_SIGNAL_CYCLES = 5
+ADAPTIVE_ADJUSTMENT_STEP = 0.02
+ADAPTIVE_MIN_TRADES_FOR_ADJUSTMENT = 5
+```
+
+**Database Storage:**
+All threshold adjustments are stored in the `threshold_adjustments` table with:
+- Old and new threshold values
+- Detailed reasoning for the adjustment
+- Cycles without signals counter
+- Recent win rate and profit factor
+- Number of trades analyzed
+
+---
+
+### 2. Machine Learning Integration (ml_predictor.py)
 **Purpose:** Predict signal success probability using historical data
 
 **Features:**
@@ -30,7 +90,7 @@ ML_MODEL_PATH = 'models/rf_model.pkl'
 
 ---
 
-### 2. Enhanced Position Sizing (position_sizing.py)
+### 3. Enhanced Position Sizing (position_sizing.py)
 **Purpose:** Optimize trade size based on risk management principles
 
 **Methods:**
@@ -61,7 +121,7 @@ KELLY_FRACTION = 0.25  # Conservative quarter Kelly
 
 ---
 
-### 3. Multi-Timeframe Analysis (multi_timeframe.py)
+### 4. Multi-Timeframe Analysis (multi_timeframe.py)
 **Purpose:** Confirm M5 signals with higher H1 timeframe
 
 **Features:**
@@ -96,7 +156,7 @@ CONFIRMATION_TIMEFRAME = 'H1'
 
 ---
 
-### 4. Enhanced Backtesting (backtest.py)
+### 5. Enhanced Backtesting (backtest.py)
 **Purpose:** Robust strategy validation with comprehensive metrics
 
 **Features:**
@@ -123,7 +183,7 @@ python cli.py walkforward --instrument EUR_USD --train-period 252 --test-period 
 
 ---
 
-### 5. Data Persistence (database.py)
+### 6. Data Persistence (database.py)
 **Purpose:** Store and analyze complete trading history
 
 **Features:**
@@ -136,18 +196,22 @@ python cli.py walkforward --instrument EUR_USD --train-period 252 --test-period 
 - **trades:** Complete trade records
 - **market_data:** Historical OHLCV with indicators
 - **model_training:** ML model performance history
+- **threshold_adjustments:** Adaptive threshold decision history (NEW!)
 
 **Usage:**
 ```python
 db = TradeDatabase('trades.db')
 trade_id = db.store_trade(trade_data)
-metrics = db.get_performance_metrics(days=30)
+metrics = db.get_performance_metrics(days=30)  # Now includes profit_factor
 training_data = db.get_training_data(min_samples=200)
+# Store threshold adjustment decisions
+db.store_threshold_adjustment(adjustment_data)
+adjustments = db.get_recent_threshold_adjustments(limit=10)
 ```
 
 ---
 
-### 6. Error Recovery (error_recovery.py)
+### 7. Error Recovery (error_recovery.py)
 **Purpose:** Handle API failures gracefully with intelligent retry
 
 **Features:**
@@ -176,7 +240,7 @@ result = backoff.execute_with_retry(api_call_function)
 
 ---
 
-### 7. Performance Optimization
+### 8. Performance Optimization
 **Status:** Already optimized - strategies.py uses pandas_ta
 
 **Vectorized Operations:**
@@ -193,14 +257,25 @@ All indicator calculations use vectorized pandas/numpy operations for optimal pe
 ## Testing
 
 ### Unit Tests (test_trading_bot.py)
-**17 comprehensive tests covering:**
+**31 comprehensive tests covering:**
 - Strategy signal generation
 - Position sizing calculations (Kelly & fixed %)
 - ML model training and predictions
 - Multi-timeframe analysis
-- Database operations
+- Database operations (including threshold adjustments)
 - Error recovery mechanisms
 - Backtesting metrics (Sharpe, drawdown)
+- **Adaptive threshold management (11 new tests):**
+  - Initialization and configuration
+  - Threshold lowering on no signals
+  - Counter reset on signals found
+  - Threshold raising on good performance
+  - Threshold raising on poor performance
+  - Threshold lowering on marginal performance
+  - Safety bounds enforcement
+  - Database storage of adjustments
+  - Status reporting
+  - Manual reset capability
 
 **Run tests:**
 ```bash
@@ -230,14 +305,17 @@ python test_integration.py
 
 ### Start Bot with Options
 ```bash
-# Full features
-python cli.py start --enable-ml --enable-multiframe --position-sizing fixed_percentage
+# Full features (recommended)
+python cli.py start --enable-ml --enable-multiframe --enable-adaptive-threshold
 
 # Without ML
 python cli.py start --no-ml
 
-# Kelly Criterion sizing
-python cli.py start --position-sizing kelly_criterion
+# Without adaptive threshold (fixed threshold)
+python cli.py start --no-adaptive-threshold
+
+# Kelly Criterion sizing with adaptive threshold
+python cli.py start --position-sizing kelly_criterion --enable-adaptive-threshold
 ```
 
 ### Backtesting
@@ -282,9 +360,17 @@ ENABLE_MULTIFRAME = True
 PRIMARY_TIMEFRAME = 'M5'
 CONFIRMATION_TIMEFRAME = 'H1'
 
+# Adaptive Threshold (NEW!)
+ENABLE_ADAPTIVE_THRESHOLD = True
+ADAPTIVE_MIN_THRESHOLD = 0.5
+ADAPTIVE_MAX_THRESHOLD = 0.95
+ADAPTIVE_NO_SIGNAL_CYCLES = 5
+ADAPTIVE_ADJUSTMENT_STEP = 0.02
+ADAPTIVE_MIN_TRADES_FOR_ADJUSTMENT = 5
+
 # Strategy
 STRATEGY = 'advanced_scalp'
-CONFIDENCE_THRESHOLD = 0.8
+CONFIDENCE_THRESHOLD = 0.8  # Base threshold (adaptive when enabled)
 ```
 
 ---
@@ -296,7 +382,14 @@ Trading Bot (bot.py)
 ├── Database (database.py)
 │   ├── Trade History
 │   ├── Market Data
-│   └── Model Training History
+│   ├── Model Training History
+│   └── Threshold Adjustments (NEW!)
+│
+├── Adaptive Threshold Manager (adaptive_threshold.py) (NEW!)
+│   ├── Signal Frequency Tracking
+│   ├── Performance-Based Adjustment
+│   ├── Decision Logging
+│   └── Safety Bounds Enforcement
 │
 ├── ML Predictor (ml_predictor.py)
 │   ├── Feature Engineering
@@ -339,10 +432,10 @@ Trading Bot (bot.py)
 ## Performance Metrics
 
 **Code Statistics:**
-- New files: 7 (database, ml_predictor, position_sizing, multi_timeframe, error_recovery, tests)
-- Enhanced files: 7 (bot, backtest, strategies, config, cli, README, .gitignore)
-- Total lines added: ~2,200 lines
-- Test coverage: 17 unit tests + 1 integration test
+- New files: 8 (database, ml_predictor, position_sizing, multi_timeframe, error_recovery, adaptive_threshold, tests)
+- Enhanced files: 9 (bot, backtest, strategies, config, cli, README, ENHANCEMENTS, .gitignore)
+- Total lines added: ~2,600 lines
+- Test coverage: 31 unit tests + 1 integration test
 - Test pass rate: 100%
 
 **Feature Flags:**
@@ -361,12 +454,13 @@ All features can be toggled on/off via CLI or config without breaking existing f
 
 ## Profitability Enhancements
 
-1. **ML Predictions:** Filter out low-probability trades
-2. **Position Sizing:** Optimize risk/reward on each trade
-3. **Multi-timeframe:** Reduce false signals with H1 confirmation
-4. **Walk-forward Testing:** Validate strategy robustness
-5. **Error Recovery:** Minimize missed opportunities from API failures
-6. **Performance Tracking:** Continuous improvement via historical analysis
+1. **Adaptive Threshold:** Autonomous self-optimization for dynamic market conditions (NEW!)
+2. **ML Predictions:** Filter out low-probability trades
+3. **Position Sizing:** Optimize risk/reward on each trade
+4. **Multi-timeframe:** Reduce false signals with H1 confirmation
+5. **Walk-forward Testing:** Validate strategy robustness
+6. **Error Recovery:** Minimize missed opportunities from API failures
+7. **Performance Tracking:** Continuous improvement via historical analysis
 
 ---
 
@@ -375,9 +469,10 @@ All features can be toggled on/off via CLI or config without breaking existing f
 1. Run bot with paper trading to collect data
 2. Train ML model after 200+ trades
 3. Enable Kelly Criterion after 30+ trades
-4. Monitor performance metrics
-5. Retrain ML model periodically
-6. Adjust parameters based on backtest results
+4. Monitor performance metrics and adaptive threshold adjustments
+5. Review threshold adjustment history in database to understand bot's learning
+6. Retrain ML model periodically
+7. Adjust adaptive threshold parameters based on results
 
 ---
 

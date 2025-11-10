@@ -381,5 +381,193 @@ class TestBacktesting(unittest.TestCase):
         self.assertAlmostEqual(max_dd, 0.0952, places=3)
 
 
+class TestAdaptiveThreshold(unittest.TestCase):
+    """Test adaptive threshold management."""
+    
+    def setUp(self):
+        """Create temporary database and adaptive threshold manager."""
+        from adaptive_threshold import AdaptiveThresholdManager
+        
+        self.temp_db_file = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.db_path = self.temp_db_file.name
+        self.db = TradeDatabase(db_path=self.db_path)
+        
+        self.manager = AdaptiveThresholdManager(
+            base_threshold=0.8,
+            db=self.db,
+            min_threshold=0.5,
+            max_threshold=0.95,
+            no_signal_cycles_trigger=5,
+            adjustment_step=0.02
+        )
+    
+    def tearDown(self):
+        """Clean up temporary database."""
+        self.db.close()
+        os.unlink(self.db_path)
+    
+    def test_initialization(self):
+        """Test manager initialization."""
+        self.assertEqual(self.manager.current_threshold, 0.8)
+        self.assertEqual(self.manager.base_threshold, 0.8)
+        self.assertEqual(self.manager.min_threshold, 0.5)
+        self.assertEqual(self.manager.max_threshold, 0.95)
+    
+    def test_lower_threshold_on_no_signals(self):
+        """Test threshold lowering when no signals found."""
+        initial_threshold = self.manager.current_threshold
+        
+        # Simulate cycles without signals
+        for i in range(5):
+            adjusted = self.manager.update_on_cycle(signals_found=0)
+        
+        # Threshold should be lowered after 5 cycles
+        self.assertLess(self.manager.current_threshold, initial_threshold)
+        self.assertEqual(self.manager.cycles_without_signal, 0)  # Reset after adjustment
+    
+    def test_reset_counter_on_signals(self):
+        """Test counter reset when signals are found."""
+        # Simulate cycles without signals
+        for i in range(3):
+            self.manager.update_on_cycle(signals_found=0)
+        
+        self.assertEqual(self.manager.cycles_without_signal, 3)
+        
+        # Find signals - should reset counter
+        self.manager.update_on_cycle(signals_found=2)
+        self.assertEqual(self.manager.cycles_without_signal, 0)
+    
+    def test_raise_threshold_on_good_performance(self):
+        """Test threshold raising on strong performance."""
+        initial_threshold = self.manager.current_threshold
+        
+        performance = {
+            'win_rate': 0.70,
+            'profit_factor': 1.8,
+            'total_trades': 10
+        }
+        
+        adjusted = self.manager.update_on_trade_result(
+            trade_profitable=True,
+            recent_performance=performance
+        )
+        
+        # Threshold should be raised for strong performance
+        self.assertTrue(adjusted)
+        self.assertGreater(self.manager.current_threshold, initial_threshold)
+    
+    def test_raise_threshold_on_poor_performance(self):
+        """Test threshold raising on poor performance to be more selective."""
+        initial_threshold = self.manager.current_threshold
+        
+        performance = {
+            'win_rate': 0.40,
+            'profit_factor': 0.7,
+            'total_trades': 10
+        }
+        
+        adjusted = self.manager.update_on_trade_result(
+            trade_profitable=False,
+            recent_performance=performance
+        )
+        
+        # Threshold should be raised for poor performance
+        self.assertTrue(adjusted)
+        self.assertGreater(self.manager.current_threshold, initial_threshold)
+    
+    def test_lower_threshold_on_marginal_performance(self):
+        """Test threshold lowering on marginal performance."""
+        initial_threshold = self.manager.current_threshold
+        
+        performance = {
+            'win_rate': 0.52,
+            'profit_factor': 1.05,
+            'total_trades': 10
+        }
+        
+        adjusted = self.manager.update_on_trade_result(
+            trade_profitable=True,
+            recent_performance=performance
+        )
+        
+        # Threshold should be lowered for marginal performance
+        self.assertTrue(adjusted)
+        self.assertLess(self.manager.current_threshold, initial_threshold)
+    
+    def test_threshold_bounds(self):
+        """Test threshold stays within min/max bounds."""
+        # Try to lower below minimum
+        self.manager.current_threshold = 0.52
+        for i in range(10):
+            self.manager.update_on_cycle(signals_found=0)
+        
+        self.assertGreaterEqual(self.manager.current_threshold, self.manager.min_threshold)
+        
+        # Reset and try to raise above maximum
+        self.manager.current_threshold = 0.93
+        performance = {
+            'win_rate': 0.80,
+            'profit_factor': 2.5,
+            'total_trades': 10
+        }
+        
+        for i in range(5):
+            self.manager.update_on_trade_result(True, performance)
+        
+        self.assertLessEqual(self.manager.current_threshold, self.manager.max_threshold)
+    
+    def test_no_adjustment_with_insufficient_trades(self):
+        """Test no performance-based adjustment with too few trades."""
+        initial_threshold = self.manager.current_threshold
+        
+        performance = {
+            'win_rate': 0.70,
+            'profit_factor': 1.8,
+            'total_trades': 3  # Below minimum
+        }
+        
+        adjusted = self.manager.update_on_trade_result(
+            trade_profitable=True,
+            recent_performance=performance
+        )
+        
+        self.assertFalse(adjusted)
+        self.assertEqual(self.manager.current_threshold, initial_threshold)
+    
+    def test_adjustment_stored_in_database(self):
+        """Test threshold adjustments are stored in database."""
+        # Trigger an adjustment
+        for i in range(5):
+            self.manager.update_on_cycle(signals_found=0)
+        
+        # Check database has the adjustment
+        adjustments = self.db.get_recent_threshold_adjustments(limit=1)
+        self.assertEqual(len(adjustments), 1)
+        self.assertEqual(adjustments[0]['old_threshold'], 0.8)
+        self.assertLess(adjustments[0]['new_threshold'], 0.8)
+        self.assertIn('cycles without signals', adjustments[0]['adjustment_reason'])
+    
+    def test_get_status(self):
+        """Test status reporting."""
+        status = self.manager.get_status()
+        
+        self.assertIn('current_threshold', status)
+        self.assertIn('base_threshold', status)
+        self.assertIn('cycles_without_signal', status)
+        self.assertEqual(status['current_threshold'], 0.8)
+    
+    def test_reset_to_base(self):
+        """Test manual reset to base threshold."""
+        # Change threshold
+        self.manager.current_threshold = 0.65
+        self.manager.cycles_without_signal = 3
+        
+        # Reset
+        self.manager.reset_to_base()
+        
+        self.assertEqual(self.manager.current_threshold, 0.8)
+        self.assertEqual(self.manager.cycles_without_signal, 0)
+
+
 if __name__ == '__main__':
     unittest.main()

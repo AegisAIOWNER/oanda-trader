@@ -46,3 +46,11 @@ KELLY_FRACTION = 0.25  # Use 25% of Kelly Criterion (quarter Kelly for safety)
 ENABLE_MULTIFRAME = True  # Enable multi-timeframe confirmation
 PRIMARY_TIMEFRAME = 'M5'  # Primary timeframe for signals
 CONFIRMATION_TIMEFRAME = 'H1'  # Higher timeframe for confirmation
+
+# Adaptive Threshold settings (autonomous self-optimization)
+ENABLE_ADAPTIVE_THRESHOLD = True  # Enable dynamic threshold adjustment
+ADAPTIVE_MIN_THRESHOLD = 0.5  # Minimum allowed threshold (safety floor)
+ADAPTIVE_MAX_THRESHOLD = 0.95  # Maximum allowed threshold (safety ceiling)
+ADAPTIVE_NO_SIGNAL_CYCLES = 5  # Cycles without signals before lowering threshold
+ADAPTIVE_ADJUSTMENT_STEP = 0.02  # Threshold adjustment step size (2%)
+ADAPTIVE_MIN_TRADES_FOR_ADJUSTMENT = 5  # Minimum trades before performance-based adjustments

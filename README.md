@@ -37,6 +37,17 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 - **Signal Filtering**: Rejects signals contradicting higher timeframe trend
 - **Confidence Boosting**: Strong confirmations increase confidence by 15%
 
+### Autonomous Adaptive Threshold (NEW!)
+- **AI-Like Self-Optimization**: Dynamically adjusts confidence threshold based on performance
+- **Signal Frequency Adaptation**: Lowers threshold after multiple cycles without signals
+- **Performance-Based Tuning**: Adjusts based on win rate and profit factor
+  - High performance (65%+ win rate, 1.5+ profit factor) → Raises threshold to be more selective
+  - Poor performance (45%- win rate, 0.8- profit factor) → Raises threshold to demand higher quality
+  - Marginal performance (50-55% win rate, ~1.0 profit factor) → Lowers threshold for more opportunities
+- **Decision Logging**: Stores all adjustments with reasoning in database for learning
+- **Safety Bounds**: Configurable min/max thresholds prevent extreme adjustments
+- **Transparent Reasoning**: Every adjustment logged with clear explanation
+
 ### Advanced Backtesting
 - **Walk-Forward Testing**: Robust validation with train/test periods
 - **Comprehensive Metrics**: Sharpe ratio, max drawdown, win rate, and more
@@ -60,7 +71,7 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 - **Daily Loss Limits**: Stops trading if daily loss exceeds 6%
 - **Multiple Instruments**: Supports 8+ currency pairs
 - **CLI Interface**: Easy command-line control with rich options
-- **Comprehensive Testing**: 17 unit tests covering core functionality
+- **Comprehensive Testing**: 31 unit tests covering core functionality
 
 ## Strategies
 
@@ -86,7 +97,7 @@ The `advanced_scalp` strategy is a sophisticated scalping system that combines m
 - Volume confirmation: 0.2
 - MACD histogram momentum: 0.1
 
-**Minimum confidence threshold**: 0.8 (configurable in config.py)
+**Minimum confidence threshold**: 0.8 (configurable in config.py, or dynamically adjusted by adaptive threshold system)
 
 ### Legacy Strategies
 
@@ -100,13 +111,20 @@ Key settings in `config.py`:
 ```python
 STRATEGY = 'advanced_scalp'  # Strategy to use
 MAX_PAIRS_TO_SCAN = 10  # Maximum pairs to scan per cycle
-CONFIDENCE_THRESHOLD = 0.8  # Minimum confidence for trades
+CONFIDENCE_THRESHOLD = 0.8  # Base confidence for trades (can be adaptive)
 INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', ...]
 
 # Risk Management
 ATR_STOP_MULTIPLIER = 1.5  # Stop loss = 1.5 × ATR
 ATR_PROFIT_MULTIPLIER = 2.5  # Take profit = 2.5 × ATR
 MAX_DAILY_LOSS_PERCENT = 6.0  # Daily loss limit
+
+# Adaptive Threshold (autonomous self-optimization)
+ENABLE_ADAPTIVE_THRESHOLD = True  # Enable dynamic threshold adjustment
+ADAPTIVE_MIN_THRESHOLD = 0.5  # Minimum allowed threshold
+ADAPTIVE_MAX_THRESHOLD = 0.95  # Maximum allowed threshold
+ADAPTIVE_NO_SIGNAL_CYCLES = 5  # Cycles without signals before lowering
+ADAPTIVE_ADJUSTMENT_STEP = 0.02  # Adjustment step size (2%)
 ```
 
 ## Usage
@@ -123,11 +141,14 @@ python cli.py start
 # Start with ML enabled (after training the model)
 python cli.py start --enable-ml
 
-# Start with all features enabled
-python cli.py start --enable-ml --enable-multiframe --position-sizing fixed_percentage
+# Start with all features enabled (recommended)
+python cli.py start --enable-ml --enable-multiframe --enable-adaptive-threshold
 
 # Use Kelly Criterion for position sizing (requires trade history)
 python cli.py start --position-sizing kelly_criterion
+
+# Disable adaptive threshold for fixed threshold behavior
+python cli.py start --no-adaptive-threshold
 ```
 
 **Direct Python:**
@@ -196,20 +217,31 @@ ENABLE_MULTIFRAME = True
 PRIMARY_TIMEFRAME = 'M5'
 CONFIRMATION_TIMEFRAME = 'H1'
 
+# Adaptive Threshold (NEW!)
+ENABLE_ADAPTIVE_THRESHOLD = True
+ADAPTIVE_MIN_THRESHOLD = 0.5
+ADAPTIVE_MAX_THRESHOLD = 0.95
+ADAPTIVE_NO_SIGNAL_CYCLES = 5
+ADAPTIVE_ADJUSTMENT_STEP = 0.02
+
 # Strategy
 STRATEGY = 'advanced_scalp'
-CONFIDENCE_THRESHOLD = 0.8
+CONFIDENCE_THRESHOLD = 0.8  # Base threshold (adaptive when enabled)
 ```
 
 ## How It Works
 
 1. **Pair Scanning**: Bot scans configured instruments for signals
 2. **Signal Evaluation**: Each pair is evaluated using the selected strategy
-3. **Confidence Filtering**: Only signals above the confidence threshold are considered
+3. **Confidence Filtering**: Only signals above the confidence threshold are considered (threshold is dynamic if adaptive mode enabled)
 4. **Best Signal Selection**: The pair with the highest confidence is selected
 5. **Adaptive Risk Calculation**: ATR-based stops and targets are calculated
 6. **Order Placement**: A single order is placed for the best signal
 7. **Safety Checks**: Margin and daily loss limits are verified
+8. **Adaptive Learning** (if enabled): 
+   - Threshold automatically adjusts after each cycle based on signal frequency
+   - Threshold adjusts after trades based on recent win rate and profit factor
+   - All adjustments are logged with reasoning in the database for transparency
 
 ## Security
 
