@@ -21,6 +21,7 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 ### Machine Learning Integration
 - **ML Predictions**: Random Forest classifier predicts signal success probability
 - **Confidence Boosting**: ML predictions integrated into confidence scoring (70% strategy, 30% ML)
+- **Disabled by Default**: ML is disabled until model is trained to avoid low confidence scores
 - **Automatic Training**: Model trains on historical OHLCV data
 - **Model Persistence**: Saves and loads trained models for continuous improvement
 
@@ -112,18 +113,18 @@ MAX_DAILY_LOSS_PERCENT = 6.0  # Daily loss limit
 
 ### Start Trading Bot
 
-**Basic usage:**
+**Basic usage (ML disabled by default):**
 ```bash
 python cli.py start
 ```
 
 **With custom options:**
 ```bash
+# Start with ML enabled (after training the model)
+python cli.py start --enable-ml
+
 # Start with all features enabled
 python cli.py start --enable-ml --enable-multiframe --position-sizing fixed_percentage
-
-# Start without ML (faster startup)
-python cli.py start --no-ml
 
 # Use Kelly Criterion for position sizing (requires trade history)
 python cli.py start --position-sizing kelly_criterion
@@ -148,9 +149,24 @@ python cli.py walkforward --instrument EUR_USD --train-period 252 --test-period 
 
 ### Machine Learning
 
+**Important: ML is disabled by default** to prevent low confidence scores from untrained models.
+
+**Workflow:**
+1. **Run bot without ML** to collect trade data (default behavior)
+2. **Train the model** once you have sufficient data (200+ samples)
+3. **Enable ML** to boost confidence scores with ML predictions
+
 **Train ML model:**
 ```bash
 python cli.py train-ml --min-samples 200
+```
+
+**Enable ML after training:**
+```bash
+# Via CLI
+python cli.py start --enable-ml
+
+# Or edit config.py and set ENABLE_ML = True
 ```
 
 The bot automatically collects training data as it trades. Train the model periodically for better predictions.
@@ -167,8 +183,8 @@ python cli.py stats --days 30
 Edit `config.py` to customize:
 
 ```python
-# ML Settings
-ENABLE_ML = True
+# ML Settings (disabled by default until model is trained)
+ENABLE_ML = False  # Set to True after training ML model
 ML_MODEL_PATH = 'models/rf_model.pkl'
 
 # Position Sizing
