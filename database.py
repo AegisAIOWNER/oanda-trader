@@ -37,6 +37,21 @@ class TradeDatabase:
             )
         ''')
         
+        # Create threshold adjustments table for autonomous learning
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS threshold_adjustments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                old_threshold REAL NOT NULL,
+                new_threshold REAL NOT NULL,
+                adjustment_reason TEXT NOT NULL,
+                cycles_without_signal INTEGER DEFAULT 0,
+                recent_win_rate REAL,
+                recent_profit_factor REAL,
+                total_trades_analyzed INTEGER DEFAULT 0
+            )
+        ''')
+        
         conn.commit()
         conn.close()
     
@@ -84,7 +99,7 @@ class TradeDatabase:
         conn.close()
     
     def get_performance_metrics(self, days=30):
-        """Get performance metrics for position sizing."""
+        """Get performance metrics for position sizing and adaptive threshold."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -99,18 +114,25 @@ class TradeDatabase:
         conn.close()
         
         if not trades:
-            return {'total_trades': 0, 'win_rate': 0.5, 'avg_win': 0.0, 'avg_loss': 0.0, 'sharpe': 0.0}
+            return {'total_trades': 0, 'win_rate': 0.5, 'avg_win': 0.0, 'avg_loss': 0.0, 
+                    'sharpe': 0.0, 'profit_factor': 1.0}
         
         pnls = [trade[0] for trade in trades if trade[0] is not None]
         if not pnls:
-            return {'total_trades': 0, 'win_rate': 0.5, 'avg_win': 0.0, 'avg_loss': 0.0, 'sharpe': 0.0}
+            return {'total_trades': 0, 'win_rate': 0.5, 'avg_win': 0.0, 'avg_loss': 0.0, 
+                    'sharpe': 0.0, 'profit_factor': 1.0}
         
         wins = [p for p in pnls if p > 0]
-        losses = [p for p in pnls if p <= 0]
+        losses = [abs(p) for p in pnls if p < 0]  # Absolute value for losses
         
         win_rate = len(wins) / len(pnls) if pnls else 0.5
         avg_win = sum(wins) / len(wins) if wins else 0.0
         avg_loss = sum(losses) / len(losses) if losses else 0.0
+        
+        # Calculate profit factor (total wins / total losses)
+        total_wins = sum(wins) if wins else 0.0
+        total_losses = sum(losses) if losses else 0.0
+        profit_factor = total_wins / total_losses if total_losses > 0 else (2.0 if total_wins > 0 else 1.0)
         
         # Simple Sharpe ratio approximation
         if len(pnls) > 1:
@@ -124,7 +146,8 @@ class TradeDatabase:
             'win_rate': win_rate,
             'avg_win': avg_win,
             'avg_loss': avg_loss,
-            'sharpe': sharpe
+            'sharpe': sharpe,
+            'profit_factor': profit_factor
         }
     
     def update_trade(self, trade_id, exit_price, pnl, status='closed'):
@@ -155,6 +178,50 @@ class TradeDatabase:
         conn.close()
         
         return [dict(zip(columns, trade)) for trade in trades]
+    
+    def store_threshold_adjustment(self, adjustment_data):
+        """Store a threshold adjustment decision for learning."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO threshold_adjustments (
+                old_threshold, new_threshold, adjustment_reason,
+                cycles_without_signal, recent_win_rate, recent_profit_factor,
+                total_trades_analyzed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            adjustment_data['old_threshold'],
+            adjustment_data['new_threshold'],
+            adjustment_data['adjustment_reason'],
+            adjustment_data.get('cycles_without_signal', 0),
+            adjustment_data.get('recent_win_rate', None),
+            adjustment_data.get('recent_profit_factor', None),
+            adjustment_data.get('total_trades_analyzed', 0)
+        ))
+        
+        adjustment_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        logging.info(f"Threshold adjustment stored: {adjustment_data['old_threshold']:.3f} → "
+                     f"{adjustment_data['new_threshold']:.3f} ({adjustment_data['adjustment_reason']})")
+        return adjustment_id
+    
+    def get_recent_threshold_adjustments(self, limit=10):
+        """Get recent threshold adjustments for analysis."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM threshold_adjustments 
+            ORDER BY timestamp DESC LIMIT ?
+        ''', (limit,))
+        
+        columns = [desc[0] for desc in cursor.description]
+        adjustments = cursor.fetchall()
+        conn.close()
+        
+        return [dict(zip(columns, adj)) for adj in adjustments]
     
     def close(self):
         """Close method for compatibility with tests (no-op since we use connection per operation)."""

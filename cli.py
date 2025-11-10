@@ -17,17 +17,21 @@ def cli():
 @click.option('--position-sizing', default='fixed_percentage', 
               type=click.Choice(['fixed_percentage', 'kelly_criterion']),
               help='Position sizing method')
-def start(enable_ml, enable_multiframe, position_sizing):
+@click.option('--enable-adaptive-threshold/--no-adaptive-threshold', default=True, 
+              help='Enable autonomous adaptive confidence threshold')
+def start(enable_ml, enable_multiframe, position_sizing, enable_adaptive_threshold):
     """Start the trading bot with configurable features."""
     click.echo(f"Starting trading bot...")
     click.echo(f"  ML Predictions: {enable_ml}")
     click.echo(f"  Multi-timeframe: {enable_multiframe}")
     click.echo(f"  Position Sizing: {position_sizing}")
+    click.echo(f"  Adaptive Threshold: {enable_adaptive_threshold}")
     
     bot = OandaTradingBot(
         enable_ml=enable_ml,
         enable_multiframe=enable_multiframe,
-        position_sizing_method=position_sizing
+        position_sizing_method=position_sizing,
+        enable_adaptive_threshold=enable_adaptive_threshold
     )
     bot.run()
 

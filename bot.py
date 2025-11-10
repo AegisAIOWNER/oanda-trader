@@ -14,9 +14,11 @@ from ml_predictor import MLPredictor
 from position_sizing import PositionSizer
 from multi_timeframe import MultiTimeframeAnalyzer
 from error_recovery import ExponentialBackoff, api_circuit_breaker
+from adaptive_threshold import AdaptiveThresholdManager
 
 class OandaTradingBot:
-    def __init__(self, enable_ml=True, enable_multiframe=True, position_sizing_method='fixed_percentage'):
+    def __init__(self, enable_ml=True, enable_multiframe=True, position_sizing_method='fixed_percentage',
+                 enable_adaptive_threshold=True):
         self.api = oandapyV20.API(access_token=API_KEY, environment=ENVIRONMENT)
         self.account_id = ACCOUNT_ID
         self.last_request_time = time.time()
@@ -42,9 +44,20 @@ class OandaTradingBot:
         self.mtf_analyzer = MultiTimeframeAnalyzer(primary_timeframe='M5', 
                                                     confirmation_timeframe='H1') if enable_multiframe else None
         
+        # Initialize adaptive threshold manager
+        self.enable_adaptive_threshold = enable_adaptive_threshold
+        self.adaptive_threshold_mgr = AdaptiveThresholdManager(
+            base_threshold=CONFIDENCE_THRESHOLD,
+            db=self.db,
+            min_threshold=ADAPTIVE_MIN_THRESHOLD,
+            max_threshold=ADAPTIVE_MAX_THRESHOLD,
+            no_signal_cycles_trigger=ADAPTIVE_NO_SIGNAL_CYCLES,
+            adjustment_step=ADAPTIVE_ADJUSTMENT_STEP
+        ) if enable_adaptive_threshold else None
+        
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
-                     f"Position sizing: {position_sizing_method}")
+                     f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}")
 
     def _rate_limited_request(self, endpoint):
         """Execute API request with rate limiting and exponential backoff."""
@@ -122,11 +135,17 @@ class OandaTradingBot:
         """Scan all configured pairs and return signals with confidence scores."""
         signals = []
         
+        # Get current threshold (adaptive or static)
+        current_threshold = (self.adaptive_threshold_mgr.get_current_threshold() 
+                           if self.enable_adaptive_threshold 
+                           else CONFIDENCE_THRESHOLD)
+        
         # Limit the number of pairs to scan based on config
         pairs_to_scan = INSTRUMENTS[:MAX_PAIRS_TO_SCAN]
         
         # Batch request optimization - collect all data first
-        logging.info(f"Scanning {len(pairs_to_scan)} pairs for signals...")
+        logging.info(f"Scanning {len(pairs_to_scan)} pairs for signals... "
+                    f"(threshold: {current_threshold:.3f})")
         
         for instrument in pairs_to_scan:
             try:
@@ -171,7 +190,7 @@ class OandaTradingBot:
                     except Exception as e:
                         logging.warning(f"ML prediction failed for {instrument}: {e}")
                 
-                if signal and confidence >= CONFIDENCE_THRESHOLD:
+                if signal and confidence >= current_threshold:
                     signals.append({
                         'instrument': instrument,
                         'signal': signal,
@@ -182,7 +201,7 @@ class OandaTradingBot:
                     })
                     logging.info(f"{instrument}: {signal} signal with confidence {confidence:.2f}")
                 elif signal:
-                    logging.info(f"{instrument}: {signal} signal rejected (confidence {confidence:.2f} < threshold {CONFIDENCE_THRESHOLD})")
+                    logging.info(f"{instrument}: {signal} signal rejected (confidence {confidence:.2f} < threshold {current_threshold:.3f})")
                     
             except Exception as e:
                 logging.error(f"Error scanning {instrument}: {e}")
@@ -228,6 +247,10 @@ class OandaTradingBot:
         
         # Scan all pairs for signals
         signals = self.scan_pairs_for_signals()
+        
+        # Update adaptive threshold based on signal frequency
+        if self.enable_adaptive_threshold:
+            self.adaptive_threshold_mgr.update_on_cycle(len(signals))
         
         if not signals:
             logging.info("No signals found in this cycle.")
@@ -279,6 +302,18 @@ class OandaTradingBot:
                 }
                 self.db.store_trade(trade_data)
                 logging.info(f"Trade stored in database")
+                
+                # Update adaptive threshold based on recent performance
+                if self.enable_adaptive_threshold:
+                    # Get recent performance for threshold adjustment
+                    perf = self.db.get_performance_metrics(days=7)
+                    if perf['total_trades'] >= ADAPTIVE_MIN_TRADES_FOR_ADJUSTMENT:
+                        # Note: We can't know if this specific trade is profitable yet
+                        # So we use overall recent performance to adjust
+                        self.adaptive_threshold_mgr.update_on_trade_result(
+                            trade_profitable=None,  # Unknown yet
+                            recent_performance=perf
+                        )
         
         return True
 
