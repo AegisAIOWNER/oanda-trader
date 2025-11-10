@@ -5,3 +5,4 @@ backtrader
 python-dotenv
 click
 pandas-ta
+scikit-learn
