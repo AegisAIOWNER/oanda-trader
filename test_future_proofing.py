@@ -577,5 +577,40 @@ class TestPerformanceMonitor(unittest.TestCase):
         self.assertFalse(health['error_rate_healthy'])
 
 
+class TestHealthChecker(unittest.TestCase):
+    """Test health checker functionality."""
+    
+    def test_check_balance_sufficient_above_threshold(self):
+        """Test balance check when balance is above minimum."""
+        is_healthy, message = HealthChecker.check_balance_sufficient(150, min_balance=100)
+        self.assertTrue(is_healthy)
+        self.assertIn("150.00", message)
+    
+    def test_check_balance_sufficient_at_threshold(self):
+        """Test balance check when balance equals minimum."""
+        is_healthy, message = HealthChecker.check_balance_sufficient(100, min_balance=100)
+        self.assertTrue(is_healthy)
+        self.assertIn("100.00", message)
+    
+    def test_check_balance_insufficient_below_threshold(self):
+        """Test balance check when balance is below minimum."""
+        is_healthy, message = HealthChecker.check_balance_sufficient(50, min_balance=100)
+        self.assertFalse(is_healthy)
+        self.assertIn("50.00", message)
+        self.assertIn("100.00", message)
+    
+    def test_check_balance_with_practice_threshold(self):
+        """Test balance check with practice mode threshold."""
+        # Practice mode should allow lower balance (10)
+        is_healthy, message = HealthChecker.check_balance_sufficient(15, min_balance=10)
+        self.assertTrue(is_healthy)
+        self.assertIn("15.00", message)
+        
+        is_healthy, message = HealthChecker.check_balance_sufficient(5, min_balance=10)
+        self.assertFalse(is_healthy)
+        self.assertIn("5.00", message)
+        self.assertIn("10.00", message)
+
+
 if __name__ == '__main__':
     unittest.main()

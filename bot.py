@@ -667,8 +667,8 @@ class OandaTradingBot:
         print(f"DEBUG: Current balance in run_cycle: {current_balance}", flush=True)
         
         # Check minimum balance threshold
-        if current_balance < MIN_BALANCE_THRESHOLD:
-            logging.error(f"Balance {current_balance:.2f} below minimum threshold {MIN_BALANCE_THRESHOLD}, stopping.")
+        if current_balance < MIN_ACCOUNT_BALANCE:
+            logging.error(f"Balance {current_balance:.2f} below minimum threshold {MIN_ACCOUNT_BALANCE}, stopping.")
             return False
         
         daily_loss_pct = (self.daily_start_balance - current_balance) / self.daily_start_balance
@@ -872,7 +872,7 @@ class OandaTradingBot:
         try:
             health_results = HealthChecker.perform_full_health_check(
                 self.api, self.account_id, self.db, 
-                self.get_balance(), MIN_BALANCE_THRESHOLD
+                self.get_balance(), MIN_ACCOUNT_BALANCE
             )
             
             if not health_results['overall']['healthy']:
