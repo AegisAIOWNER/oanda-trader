@@ -7,7 +7,8 @@ import oandapyV20.endpoints.positions as positions
 import pandas as pd
 import time
 import logging
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 from config import *
 from strategies import get_signal, get_signal_with_confidence
 from database import TradeDatabase
@@ -87,10 +88,22 @@ class OandaTradingBot:
         ) if enable_adaptive_threshold else None
         print("DEBUG: Adaptive threshold manager initialized", flush=True)
         
+        # Initialize dynamic instruments if enabled
+        print(f"DEBUG: Initializing dynamic instruments (enabled: {ENABLE_DYNAMIC_INSTRUMENTS})...", flush=True)
+        self.enable_dynamic_instruments = ENABLE_DYNAMIC_INSTRUMENTS
+        self.instruments_cache = {}  # Cache of {instrument_name: {pipLocation, displayName, type, etc.}}
+        self.instruments_cache_time = None  # Time when cache was last updated
+        
+        if self.enable_dynamic_instruments:
+            print("DEBUG: Fetching dynamic instruments from API...", flush=True)
+            self._fetch_and_cache_instruments()
+            print(f"DEBUG: Cached {len(self.instruments_cache)} instruments", flush=True)
+        
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
                      f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}, "
-                     f"Volatility detection: {enable_volatility_detection}")
+                     f"Volatility detection: {enable_volatility_detection}, "
+                     f"Dynamic instruments: {ENABLE_DYNAMIC_INSTRUMENTS}")
         print("DEBUG: OandaTradingBot.__init__ completed successfully", flush=True)
 
     def _rate_limited_request(self, endpoint):
@@ -113,6 +126,97 @@ class OandaTradingBot:
         
         # Execute with exponential backoff
         return self.api_backoff.execute_with_retry(_execute_request)
+
+    def _fetch_and_cache_instruments(self):
+        """Fetch all tradable instruments from Oanda API and cache their metadata."""
+        try:
+            r = accounts.AccountInstruments(accountID=self.account_id)
+            response = self._rate_limited_request(r)
+            
+            instruments_list = response.get('instruments', [])
+            self.instruments_cache = {}
+            
+            for inst in instruments_list:
+                name = inst.get('name')
+                if name:
+                    # Store relevant metadata
+                    self.instruments_cache[name] = {
+                        'pipLocation': inst.get('pipLocation', -4),
+                        'displayName': inst.get('displayName', name),
+                        'type': inst.get('type', 'CURRENCY'),
+                        'displayPrecision': inst.get('displayPrecision', 5),
+                        'tradeUnitsPrecision': inst.get('tradeUnitsPrecision', 0),
+                        'minimumTradeSize': inst.get('minimumTradeSize', '1'),
+                        'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000')
+                    }
+            
+            self.instruments_cache_time = datetime.now()
+            logging.info(f"Cached {len(self.instruments_cache)} tradable instruments from Oanda API")
+            
+            # Log some sample instruments for visibility
+            sample_instruments = list(self.instruments_cache.keys())[:10]
+            logging.info(f"Sample instruments: {', '.join(sample_instruments)}")
+            
+        except Exception as e:
+            logging.error(f"Failed to fetch instruments from API: {e}")
+            # Fall back to config instruments if dynamic fetch fails
+            logging.warning("Falling back to config INSTRUMENTS list")
+            for inst in INSTRUMENTS:
+                self.instruments_cache[inst] = {
+                    'pipLocation': -2 if 'JPY' in inst else -4,
+                    'displayName': inst,
+                    'type': 'CURRENCY',
+                    'displayPrecision': 3 if 'JPY' in inst else 5,
+                    'tradeUnitsPrecision': 0,
+                    'minimumTradeSize': '1',
+                    'maximumOrderUnits': '100000000'
+                }
+            self.instruments_cache_time = datetime.now()
+    
+    def _should_refresh_instruments_cache(self):
+        """Check if instruments cache should be refreshed."""
+        if not self.instruments_cache_time:
+            return True
+        
+        hours_since_cache = (datetime.now() - self.instruments_cache_time).total_seconds() / 3600
+        return hours_since_cache >= DYNAMIC_INSTRUMENT_CACHE_HOURS
+    
+    def _get_instrument_pip_size(self, instrument):
+        """Get pip size for an instrument from cache.
+        
+        Args:
+            instrument: Instrument name (e.g., 'EUR_USD', 'USD_JPY')
+            
+        Returns:
+            float: Pip size (e.g., 0.0001 for EUR_USD, 0.01 for USD_JPY)
+        """
+        if self.enable_dynamic_instruments and instrument in self.instruments_cache:
+            pip_location = self.instruments_cache[instrument]['pipLocation']
+            return 10 ** pip_location
+        else:
+            # Fallback to legacy logic
+            if 'JPY' in instrument:
+                return 0.01
+            else:
+                return 0.0001
+    
+    def _get_available_instruments(self):
+        """Get list of instruments to scan.
+        
+        Returns:
+            list: List of instrument names to scan
+        """
+        if self.enable_dynamic_instruments:
+            # Refresh cache if needed
+            if self._should_refresh_instruments_cache():
+                logging.info("Refreshing instruments cache...")
+                self._fetch_and_cache_instruments()
+            
+            # Return all cached instruments
+            return list(self.instruments_cache.keys())
+        else:
+            # Return config instruments
+            return INSTRUMENTS
 
     def get_balance(self):
         r = accounts.AccountSummary(accountID=self.account_id)
@@ -175,16 +279,28 @@ class OandaTradingBot:
                            if self.enable_adaptive_threshold 
                            else CONFIDENCE_THRESHOLD)
         
-        # Limit the number of pairs to scan based on config
-        pairs_to_scan = INSTRUMENTS[:MAX_PAIRS_TO_SCAN]
+        # Get available instruments (dynamic or config-based)
+        available_instruments = self._get_available_instruments()
+        
+        # Select pairs to scan - randomly sample if dynamic, or limit to MAX_PAIRS_TO_SCAN
+        if self.enable_dynamic_instruments and len(available_instruments) > MAX_PAIRS_TO_SCAN:
+            # Randomly select a subset to comply with API limits
+            pairs_to_scan = random.sample(available_instruments, MAX_PAIRS_TO_SCAN)
+            selection_mode = "random"
+        else:
+            # Use first N instruments (backward compatible)
+            pairs_to_scan = available_instruments[:MAX_PAIRS_TO_SCAN]
+            selection_mode = "sequential"
         
         # Batch request optimization - collect all data first
-        print(f"Scanning {len(pairs_to_scan)} pairs for signals... "
+        print(f"Scanning {len(pairs_to_scan)} pairs for signals ({selection_mode} selection from {len(available_instruments)} available)... "
               f"(threshold: {current_threshold:.3f})", flush=True)
         
         # Debug: Show the bot's thinking about the threshold
         threshold_source = "adaptive" if self.enable_adaptive_threshold else "static"
+        instrument_source = "dynamic (API)" if self.enable_dynamic_instruments else "static (config)"
         print(f"🤖 BOT DECISION: Using {threshold_source} threshold = {current_threshold:.3f}", flush=True)
+        print(f"🤖 BOT DECISION: Using {instrument_source} instrument list", flush=True)
         print(f"🤖 BOT DECISION: Scanning {len(pairs_to_scan)} pairs: {', '.join(pairs_to_scan)}", flush=True)
         
         for instrument in pairs_to_scan:
@@ -313,11 +429,8 @@ class OandaTradingBot:
         stop_mult = stop_multiplier if stop_multiplier is not None else ATR_STOP_MULTIPLIER
         profit_mult = profit_multiplier if profit_multiplier is not None else ATR_PROFIT_MULTIPLIER
         
-        # Determine pip size based on instrument
-        if 'JPY' in instrument:
-            pip_size = 0.01  # Japanese Yen pairs use 2 decimal places
-        else:
-            pip_size = 0.0001  # Most pairs use 4 decimal places
+        # Dynamically determine pip size from instrument metadata
+        pip_size = self._get_instrument_pip_size(instrument)
         
         if atr > 0:
             # Calculate price distances with potentially adjusted multipliers

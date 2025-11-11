@@ -702,5 +702,149 @@ class TestAdaptiveThreshold(unittest.TestCase):
         self.assertEqual(self.manager.cycles_without_signal, 0)
 
 
+class TestDynamicInstruments(unittest.TestCase):
+    """Test dynamic instrument selection functionality."""
+    
+    def setUp(self):
+        """Set up a mock bot for testing."""
+        from unittest.mock import MagicMock, patch
+        from bot import OandaTradingBot
+        
+        # Mock the API response for instruments
+        self.mock_instruments_response = {
+            'instruments': [
+                {
+                    'name': 'EUR_USD',
+                    'displayName': 'EUR/USD',
+                    'type': 'CURRENCY',
+                    'pipLocation': -4,
+                    'displayPrecision': 5,
+                    'tradeUnitsPrecision': 0,
+                    'minimumTradeSize': '1',
+                    'maximumOrderUnits': '100000000'
+                },
+                {
+                    'name': 'USD_JPY',
+                    'displayName': 'USD/JPY',
+                    'type': 'CURRENCY',
+                    'pipLocation': -2,
+                    'displayPrecision': 3,
+                    'tradeUnitsPrecision': 0,
+                    'minimumTradeSize': '1',
+                    'maximumOrderUnits': '100000000'
+                },
+                {
+                    'name': 'XAU_USD',
+                    'displayName': 'Gold',
+                    'type': 'METAL',
+                    'pipLocation': -1,
+                    'displayPrecision': 2,
+                    'tradeUnitsPrecision': 0,
+                    'minimumTradeSize': '1',
+                    'maximumOrderUnits': '10000000'
+                },
+                {
+                    'name': 'SPX500_USD',
+                    'displayName': 'S&P 500',
+                    'type': 'CFD',
+                    'pipLocation': -1,
+                    'displayPrecision': 2,
+                    'tradeUnitsPrecision': 0,
+                    'minimumTradeSize': '1',
+                    'maximumOrderUnits': '100000'
+                }
+            ]
+        }
+        
+        # Mock the API to return our test instruments
+        with patch('bot.oandapyV20.API'), \
+             patch('bot.TradeDatabase'), \
+             patch('bot.MLPredictor'), \
+             patch('bot.PositionSizer'), \
+             patch('bot.MultiTimeframeAnalyzer'), \
+             patch('bot.AdaptiveThresholdManager'), \
+             patch('bot.VolatilityDetector'), \
+             patch.object(OandaTradingBot, 'get_balance', return_value=10000.0), \
+             patch.object(OandaTradingBot, '_rate_limited_request', return_value=self.mock_instruments_response):
+            self.bot = OandaTradingBot(
+                enable_ml=False, 
+                enable_multiframe=False,
+                enable_adaptive_threshold=False
+            )
+    
+    def test_instruments_cached_on_init(self):
+        """Test that instruments are cached during initialization."""
+        self.assertEqual(len(self.bot.instruments_cache), 4)
+        self.assertIn('EUR_USD', self.bot.instruments_cache)
+        self.assertIn('USD_JPY', self.bot.instruments_cache)
+        self.assertIn('XAU_USD', self.bot.instruments_cache)
+        self.assertIn('SPX500_USD', self.bot.instruments_cache)
+    
+    def test_pip_size_from_cache(self):
+        """Test pip size extraction from cached instruments."""
+        # EUR_USD with pipLocation -4
+        pip_size = self.bot._get_instrument_pip_size('EUR_USD')
+        self.assertEqual(pip_size, 0.0001)
+        
+        # USD_JPY with pipLocation -2
+        pip_size = self.bot._get_instrument_pip_size('USD_JPY')
+        self.assertEqual(pip_size, 0.01)
+        
+        # XAU_USD (Gold) with pipLocation -1
+        pip_size = self.bot._get_instrument_pip_size('XAU_USD')
+        self.assertEqual(pip_size, 0.1)
+        
+        # SPX500_USD (S&P 500) with pipLocation -1
+        pip_size = self.bot._get_instrument_pip_size('SPX500_USD')
+        self.assertEqual(pip_size, 0.1)
+    
+    def test_get_available_instruments(self):
+        """Test getting available instruments list."""
+        instruments = self.bot._get_available_instruments()
+        self.assertEqual(len(instruments), 4)
+        self.assertIn('EUR_USD', instruments)
+        self.assertIn('XAU_USD', instruments)
+    
+    def test_calculate_atr_stops_with_dynamic_pip_size(self):
+        """Test ATR stops calculation with dynamically determined pip sizes."""
+        # Test with Gold (XAU_USD) which has pipLocation -1
+        atr = 1.5
+        signal = 'BUY'
+        instrument = 'XAU_USD'
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
+        
+        # pip_size = 0.1 (from pipLocation -1)
+        # sl_price = 1.5 * 1.5 = 2.25
+        # tp_price = 1.5 * 2.5 = 3.75
+        # sl_pips = 2.25 / 0.1 = 22.5
+        # tp_pips = 3.75 / 0.1 = 37.5
+        
+        self.assertAlmostEqual(sl_pips, 22.5, places=5)
+        self.assertAlmostEqual(tp_pips, 37.5, places=5)
+    
+    def test_fallback_to_legacy_pip_logic(self):
+        """Test fallback to legacy logic for uncached instruments."""
+        # Test with an instrument not in cache
+        pip_size = self.bot._get_instrument_pip_size('GBP_CHF')
+        
+        # Should fall back to legacy logic (no JPY, so 0.0001)
+        self.assertEqual(pip_size, 0.0001)
+        
+        # Test JPY pair fallback
+        pip_size = self.bot._get_instrument_pip_size('EUR_JPY')
+        self.assertEqual(pip_size, 0.01)
+    
+    def test_cache_metadata(self):
+        """Test that all relevant metadata is cached."""
+        eur_usd_meta = self.bot.instruments_cache['EUR_USD']
+        
+        self.assertEqual(eur_usd_meta['displayName'], 'EUR/USD')
+        self.assertEqual(eur_usd_meta['type'], 'CURRENCY')
+        self.assertEqual(eur_usd_meta['pipLocation'], -4)
+        self.assertEqual(eur_usd_meta['displayPrecision'], 5)
+        self.assertEqual(eur_usd_meta['minimumTradeSize'], '1')
+
+
 if __name__ == '__main__':
     unittest.main()
