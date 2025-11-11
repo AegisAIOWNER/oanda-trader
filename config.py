@@ -100,7 +100,7 @@ MAX_API_RETRIES = 5  # Maximum retries for API calls
 # Health Monitoring
 ENABLE_HEALTH_CHECKS = True  # Enable health monitoring
 HEALTH_CHECK_INTERVAL = 3600  # Health check interval in seconds (1 hour)
-MIN_BALANCE_THRESHOLD = 100  # Minimum balance to continue trading
+MIN_ACCOUNT_BALANCE = 10 if ENVIRONMENT == 'practice' else 100  # Minimum balance to continue trading (10 for practice, 100 for live)
 
 # Logging
 ENABLE_STRUCTURED_LOGGING = True  # Enable structured logging with context
