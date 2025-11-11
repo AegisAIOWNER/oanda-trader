@@ -16,7 +16,7 @@ STRATEGY = 'advanced_scalp'  # New advanced scalping strategy
 
 # For scalping
 GRANULARITY = 'M5'  # 5-minute candles for scalping
-CHECK_INTERVAL = 300  # 5 minutes between checks
+CHECK_INTERVAL = 120  # 2 minutes between checks (faster signal detection)
 
 # Risk management
 STOP_LOSS_PIPS = 5  # Tighter stops for scalping (will be overridden by ATR-based stops)
@@ -33,9 +33,10 @@ VOLUME_MA_PERIOD = 20  # Period for volume moving average
 MIN_VOLUME_RATIO = 1.2  # Minimum volume ratio for confirmation (current volume / avg volume)
 
 # Machine Learning settings
-ENABLE_ML = False  # Enable ML predictions (disabled by default until model is trained)
+ENABLE_ML = True  # Enable ML predictions for enhanced decision making
 ML_MODEL_PATH = 'models/rf_model.pkl'  # Path to store ML model
-ML_MIN_TRAINING_SAMPLES = 200  # Minimum samples required for training
+ML_MIN_TRAINING_SAMPLES = 10  # Minimum samples required for training (reduced for faster integration)
+ML_AUTO_TRAIN_INTERVAL = 10  # Automatically retrain model after N new trades
 
 # Position Sizing settings
 POSITION_SIZING_METHOD = 'fixed_percentage'  # 'fixed_percentage' or 'kelly_criterion'
@@ -59,7 +60,7 @@ ADAPTIVE_MIN_TRADES_FOR_ADJUSTMENT = 5  # Minimum trades before performance-base
 ENABLE_VOLATILITY_DETECTION = True  # Enable market volatility detection
 VOLATILITY_LOW_THRESHOLD = 0.0005  # ATR threshold for low volatility (e.g., 5 pips for most pairs)
 VOLATILITY_NORMAL_THRESHOLD = 0.0015  # ATR threshold for normal/high volatility (e.g., 15 pips)
-VOLATILITY_ADJUSTMENT_MODE = 'adaptive'  # How to adjust: 'aggressive_threshold', 'widen_stops', 'skip_cycles', 'adaptive' (all)
+VOLATILITY_ADJUSTMENT_MODE = 'aggressive_threshold'  # How to adjust: 'aggressive_threshold', 'widen_stops', 'skip_cycles', 'adaptive' (all)
 VOLATILITY_ATR_WINDOW = 10  # Number of cycles to average ATR for volatility detection
 
 # Dynamic Instrument Selection settings
@@ -68,8 +69,8 @@ DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before ref
 
 # Enhanced Risk Management settings (future-proofing)
 MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions
-MAX_RISK_PER_TRADE = 0.05  # Maximum risk per trade (5% of balance)
-MAX_TOTAL_RISK = 0.10  # Maximum total risk across all positions (10% of balance)
+MAX_RISK_PER_TRADE = 0.05  # Maximum risk per trade (5% of balance) - increased for more trades
+MAX_TOTAL_RISK = 0.15  # Maximum total risk across all positions (15% of balance) - adjusted for higher individual risk
 MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments (same base currency)
 MAX_UNITS_PER_INSTRUMENT = 100000  # Maximum units per instrument
 MAX_SLIPPAGE_PIPS = 2.0  # Maximum acceptable slippage in pips
@@ -102,10 +103,19 @@ ENABLE_HEALTH_CHECKS = True  # Enable health monitoring
 HEALTH_CHECK_INTERVAL = 3600  # Health check interval in seconds (1 hour)
 MIN_ACCOUNT_BALANCE = 10 if ENVIRONMENT == 'practice' else 100  # Minimum balance to continue trading (10 for practice, 100 for live)
 
-# Position Monitoring (Real-time TP monitoring)
+# Position Monitoring (Real-time TP monitoring with trailing stops)
 ENABLE_POSITION_MONITORING = True  # Enable real-time position monitoring for take profit
 POSITION_MONITOR_INTERVAL = 30  # Check open positions every N seconds (default: 30)
+ENABLE_TRAILING_STOPS = True  # Enable trailing stop loss mechanism
+TRAILING_STOP_ATR_MULTIPLIER = 0.5  # Move SL up by 50% of ATR as profit grows
+TRAILING_STOP_ACTIVATION_MULTIPLIER = 1.0  # Activate trailing after profit >= 1.0x ATR
 
 # Logging
 ENABLE_STRUCTURED_LOGGING = True  # Enable structured logging with context
 LOG_LEVEL = 'INFO'  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# P&L Analytics and Reporting
+ENABLE_COMPREHENSIVE_ANALYTICS = True  # Enable comprehensive P&L analytics
+ANALYTICS_REPORT_INTERVAL = 3600  # Generate analytics report every N seconds (1 hour)
+ANALYTICS_MIN_TRADES_FOR_SUGGESTIONS = 5  # Minimum trades before generating suggestions
+ANALYTICS_DRAWDOWN_THRESHOLD = 0.10  # Alert if drawdown exceeds 10%

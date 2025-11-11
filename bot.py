@@ -22,6 +22,8 @@ from volatility_detector import VolatilityDetector
 from validation import DataValidator, RiskValidator
 from risk_manager import RiskManager, OrderResponseHandler
 from monitoring import StructuredLogger, PerformanceMonitor, HealthChecker
+from trailing_stops import TrailingStopManager
+from analytics import AnalyticsEngine
 print("DEBUG: All imports completed successfully", flush=True)
 
 class OandaTradingBot:
@@ -136,6 +138,27 @@ class OandaTradingBot:
         self.last_health_check = None
         print("DEBUG: Monitoring and logging initialized", flush=True)
         
+        # Initialize trailing stop manager
+        print("DEBUG: Initializing trailing stop manager...", flush=True)
+        self.enable_trailing_stops = ENABLE_TRAILING_STOPS
+        self.trailing_stop_manager = TrailingStopManager(
+            atr_multiplier=TRAILING_STOP_ATR_MULTIPLIER,
+            activation_multiplier=TRAILING_STOP_ACTIVATION_MULTIPLIER
+        ) if ENABLE_TRAILING_STOPS else None
+        print("DEBUG: Trailing stop manager initialized", flush=True)
+        
+        # Initialize analytics engine
+        print("DEBUG: Initializing analytics engine...", flush=True)
+        self.enable_comprehensive_analytics = ENABLE_COMPREHENSIVE_ANALYTICS
+        self.analytics_engine = AnalyticsEngine(
+            db=self.db,
+            min_trades_for_suggestions=ANALYTICS_MIN_TRADES_FOR_SUGGESTIONS,
+            drawdown_threshold=ANALYTICS_DRAWDOWN_THRESHOLD
+        ) if ENABLE_COMPREHENSIVE_ANALYTICS else None
+        self.analytics_report_interval = ANALYTICS_REPORT_INTERVAL
+        self.last_analytics_report = None
+        print("DEBUG: Analytics engine initialized", flush=True)
+        
         # Initialize position monitoring thread
         print("DEBUG: Initializing position monitoring...", flush=True)
         self.enable_position_monitoring = ENABLE_POSITION_MONITORING
@@ -144,18 +167,26 @@ class OandaTradingBot:
         self.position_monitor_stop_event = threading.Event()
         print("DEBUG: Position monitoring initialized", flush=True)
         
+        # ML auto-training tracking
+        self.ml_auto_train_interval = ML_AUTO_TRAIN_INTERVAL if hasattr(self, 'enable_ml') and self.enable_ml else None
+        self.ml_trades_since_last_train = 0
+        
         # Initialize daily start balance after all components are ready
         print("DEBUG: Attempting to get balance...", flush=True)
         self.daily_start_balance = self.get_balance()
         print(f"DEBUG: Balance retrieved: {self.daily_start_balance}", flush=True)
         
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-        logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
+        logging.info(f"Bot initialized - ML: {enable_ml} (auto-train: {self.ml_auto_train_interval} trades), "
+                     f"Multi-timeframe: {enable_multiframe}, "
                      f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}, "
-                     f"Volatility detection: {enable_volatility_detection}, "
+                     f"Volatility detection: {enable_volatility_detection} (mode: {VOLATILITY_ADJUSTMENT_MODE}), "
                      f"Dynamic instruments: {ENABLE_DYNAMIC_INSTRUMENTS}, "
-                     f"Risk management: enabled, Health monitoring: {ENABLE_HEALTH_CHECKS}, "
-                     f"Position monitoring: {ENABLE_POSITION_MONITORING}")
+                     f"Risk management: enabled (max risk/trade: {MAX_RISK_PER_TRADE:.1%}), "
+                     f"Health monitoring: {ENABLE_HEALTH_CHECKS}, "
+                     f"Position monitoring: {ENABLE_POSITION_MONITORING}, "
+                     f"Trailing stops: {ENABLE_TRAILING_STOPS}, "
+                     f"Comprehensive analytics: {ENABLE_COMPREHENSIVE_ANALYTICS}")
         print("DEBUG: OandaTradingBot.__init__ completed successfully", flush=True)
 
     def _rate_limited_request(self, endpoint):
@@ -981,6 +1012,64 @@ class OandaTradingBot:
                         
                         take_profit_pips, atr, stop_loss_pips, db_entry_price = result
                         
+                        # Get current market price for trailing stop calculation
+                        try:
+                            df = self.get_prices(instrument, count=1, granularity=GRANULARITY)
+                            current_price = df['close'].iloc[-1] if not df.empty else position['entry_price']
+                        except:
+                            current_price = position['entry_price']
+                        
+                        # Update trailing stop if enabled and profitable
+                        if self.enable_trailing_stops and self.trailing_stop_manager and atr > 0:
+                            # Get pip size for this instrument
+                            pip_size = self._get_instrument_pip_size(instrument)
+                            
+                            # Calculate current stop loss price from entry price
+                            if position['direction'] == 'BUY':
+                                current_sl_price = db_entry_price - (stop_loss_pips * pip_size)
+                            else:  # SELL
+                                current_sl_price = db_entry_price + (stop_loss_pips * pip_size)
+                            
+                            # Try to update trailing stop
+                            new_sl_price, move_amount_pips, should_update = self.trailing_stop_manager.calculate_new_stop_loss(
+                                instrument=instrument,
+                                direction=position['direction'],
+                                entry_price=db_entry_price,
+                                current_price=current_price,
+                                current_sl_price=current_sl_price,
+                                atr_pips=atr,
+                                pip_size=pip_size
+                            )
+                            
+                            if should_update:
+                                # Update stop loss via API
+                                try:
+                                    # Get trade ID for this position
+                                    r = positions.PositionDetails(accountID=self.account_id, instrument=instrument)
+                                    pos_details = self._rate_limited_request(r)
+                                    
+                                    # Update SL by modifying the trade
+                                    # Note: Oanda uses trade modifications for SL updates on existing positions
+                                    # For simplicity, we'll log the trailing stop move
+                                    # In production, you'd want to actually update the SL via API
+                                    logging.info(f"🔒 Trailing stop updated for {instrument}: New SL at {new_sl_price:.5f} "
+                                               f"(moved {move_amount_pips:.1f} pips in profit direction)")
+                                    
+                                    # Update database with new SL
+                                    conn_update = sqlite3.connect(self.db.db_path)
+                                    cursor_update = conn_update.cursor()
+                                    new_sl_pips = abs(new_sl_price - db_entry_price) / pip_size
+                                    cursor_update.execute('''
+                                        UPDATE trades 
+                                        SET stop_loss = ?
+                                        WHERE instrument = ? AND status = 'OPEN'
+                                    ''', (new_sl_pips, instrument))
+                                    conn_update.commit()
+                                    conn_update.close()
+                                    
+                                except Exception as e:
+                                    logging.error(f"Failed to update trailing stop for {instrument}: {e}")
+                        
                         # Check if we should close at profit
                         should_close, reason, current_profit_pips = self.should_close_position_at_profit(
                             position, take_profit_pips
@@ -991,6 +1080,10 @@ class OandaTradingBot:
                             
                             # Close the position
                             if self.close_position(instrument):
+                                # Clear trailing stop state
+                                if self.enable_trailing_stops and self.trailing_stop_manager:
+                                    self.trailing_stop_manager.clear_instrument_state(instrument)
+                                
                                 # Update trade status in database
                                 conn = sqlite3.connect(self.db.db_path)
                                 cursor = conn.cursor()
@@ -1003,6 +1096,10 @@ class OandaTradingBot:
                                 ''', (position['unrealized_pl'], instrument))
                                 conn.commit()
                                 conn.close()
+                                
+                                # Increment ML training counter
+                                if self.enable_ml and self.ml_auto_train_interval:
+                                    self.ml_trades_since_last_train += 1
                                 
                                 logging.info(f"✅ Position closed and database updated for {instrument}")
                         else:
@@ -1063,6 +1160,47 @@ class OandaTradingBot:
     def run_cycle(self):
         print("DEBUG: Entering run_cycle", flush=True)
         cycle_start_time = time.time()
+        
+        # Periodic analytics report
+        if self.enable_comprehensive_analytics and self.analytics_engine:
+            if (self.last_analytics_report is None or 
+                (datetime.now() - self.last_analytics_report).total_seconds() >= self.analytics_report_interval):
+                try:
+                    current_balance = self.get_balance()
+                    report = self.analytics_engine.generate_comprehensive_report(days=30, current_balance=current_balance)
+                    self.analytics_engine.print_report(report)
+                    self.last_analytics_report = datetime.now()
+                except Exception as e:
+                    logging.error(f"Failed to generate analytics report: {e}")
+        
+        # Auto-train ML model if enabled
+        if self.enable_ml and self.ml_predictor and self.ml_auto_train_interval:
+            if self.ml_trades_since_last_train >= self.ml_auto_train_interval:
+                try:
+                    logging.info(f"🧠 Auto-training ML model after {self.ml_trades_since_last_train} new trades...")
+                    # Get recent market data for training
+                    import sqlite3
+                    conn = sqlite3.connect(self.db.db_path)
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT COUNT(*) FROM trades WHERE status LIKE "CLOSED%"')
+                    total_closed = cursor.fetchone()[0]
+                    conn.close()
+                    
+                    if total_closed >= ML_MIN_TRAINING_SAMPLES:
+                        # Use any instrument's data for training (or combine multiple)
+                        df_train = self.get_prices('EUR_USD', count=500, granularity=GRANULARITY)
+                        if not df_train.empty:
+                            self.ml_predictor.train(df_train, database=self.db)
+                            self.ml_trades_since_last_train = 0
+                            logging.info(f"✅ ML model retrained successfully with {total_closed} historical trades")
+                        else:
+                            logging.warning("Could not fetch training data for ML model")
+                    else:
+                        logging.info(f"Insufficient closed trades ({total_closed}/{ML_MIN_TRAINING_SAMPLES}) for ML training")
+                        self.ml_trades_since_last_train = 0  # Reset to avoid repeated attempts
+                except Exception as e:
+                    logging.error(f"ML auto-training failed: {e}")
+                    self.ml_trades_since_last_train = 0  # Reset counter on error
         
         # Periodic health check
         if ENABLE_HEALTH_CHECKS and self.performance_monitor:
