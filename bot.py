@@ -8,6 +8,7 @@ import pandas as pd
 import time
 import logging
 import random
+import threading
 from datetime import datetime, timedelta
 from config import *
 from strategies import get_signal, get_signal_with_confidence
@@ -135,6 +136,14 @@ class OandaTradingBot:
         self.last_health_check = None
         print("DEBUG: Monitoring and logging initialized", flush=True)
         
+        # Initialize position monitoring thread
+        print("DEBUG: Initializing position monitoring...", flush=True)
+        self.enable_position_monitoring = ENABLE_POSITION_MONITORING
+        self.position_monitor_interval = POSITION_MONITOR_INTERVAL
+        self.position_monitor_thread = None
+        self.position_monitor_stop_event = threading.Event()
+        print("DEBUG: Position monitoring initialized", flush=True)
+        
         # Initialize daily start balance after all components are ready
         print("DEBUG: Attempting to get balance...", flush=True)
         self.daily_start_balance = self.get_balance()
@@ -145,7 +154,8 @@ class OandaTradingBot:
                      f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}, "
                      f"Volatility detection: {enable_volatility_detection}, "
                      f"Dynamic instruments: {ENABLE_DYNAMIC_INSTRUMENTS}, "
-                     f"Risk management: enabled, Health monitoring: {ENABLE_HEALTH_CHECKS}")
+                     f"Risk management: enabled, Health monitoring: {ENABLE_HEALTH_CHECKS}, "
+                     f"Position monitoring: {ENABLE_POSITION_MONITORING}")
         print("DEBUG: OandaTradingBot.__init__ completed successfully", flush=True)
 
     def _rate_limited_request(self, endpoint):
@@ -793,6 +803,263 @@ class OandaTradingBot:
         # Use format to avoid scientific notation and trailing zeros
         return f"{rounded_distance:.{display_precision}f}"
 
+    def get_open_positions_with_details(self):
+        """
+        Get detailed information about all open positions including current profit.
+        
+        Returns:
+            list: List of dicts with position details including instrument, units, unrealized_pl, entry_price, etc.
+        """
+        try:
+            r = positions.OpenPositions(accountID=self.account_id)
+            response = self._rate_limited_request(r)
+            api_positions = response.get('positions', [])
+            
+            detailed_positions = []
+            for pos in api_positions:
+                instrument = pos.get('instrument')
+                if not instrument:
+                    continue
+                
+                long_units = float(pos.get('long', {}).get('units', 0))
+                short_units = float(pos.get('short', {}).get('units', 0))
+                long_pl = float(pos.get('long', {}).get('unrealizedPL', 0))
+                short_pl = float(pos.get('short', {}).get('unrealizedPL', 0))
+                long_avg_price = float(pos.get('long', {}).get('averagePrice', 0)) if long_units != 0 else 0
+                short_avg_price = float(pos.get('short', {}).get('averagePrice', 0)) if short_units != 0 else 0
+                
+                # Calculate net position
+                net_units = long_units + short_units  # short_units is negative
+                total_pl = long_pl + short_pl
+                
+                if net_units != 0:
+                    # Determine entry price based on position direction
+                    entry_price = long_avg_price if long_units != 0 else short_avg_price
+                    
+                    detailed_positions.append({
+                        'instrument': instrument,
+                        'units': net_units,
+                        'unrealized_pl': total_pl,
+                        'entry_price': entry_price,
+                        'long_units': long_units,
+                        'short_units': short_units,
+                        'direction': 'BUY' if net_units > 0 else 'SELL'
+                    })
+            
+            return detailed_positions
+        
+        except Exception as e:
+            logging.error(f"Failed to get open positions with details: {e}")
+            return []
+    
+    def should_close_position_at_profit(self, position, take_profit_pips):
+        """
+        Determine if a position should be closed based on current profit vs. take profit target.
+        
+        Args:
+            position: Position dict with instrument, units, unrealized_pl, entry_price
+            take_profit_pips: Take profit target in pips
+            
+        Returns:
+            tuple: (should_close, reason, current_profit_pips)
+        """
+        instrument = position['instrument']
+        unrealized_pl = position['unrealized_pl']
+        units = abs(position['units'])
+        entry_price = position['entry_price']
+        
+        if units == 0 or entry_price == 0:
+            return False, "Invalid position data", 0
+        
+        # Calculate pip value for this instrument
+        pip_value = self._calculate_pip_value(instrument, entry_price)
+        
+        # Calculate profit in pips
+        # Formula: profit_pips = unrealized_pl / (units * pip_value)
+        if pip_value > 0:
+            current_profit_pips = unrealized_pl / (units * pip_value)
+        else:
+            return False, "Invalid pip value", 0
+        
+        # Check if current profit >= take profit target
+        if current_profit_pips >= take_profit_pips:
+            return True, f"Profit target reached: {current_profit_pips:.2f} pips >= {take_profit_pips:.2f} pips", current_profit_pips
+        
+        return False, f"Profit below target: {current_profit_pips:.2f} pips < {take_profit_pips:.2f} pips", current_profit_pips
+    
+    def close_position(self, instrument):
+        """
+        Close an open position for a specific instrument.
+        
+        Args:
+            instrument: Trading instrument to close
+            
+        Returns:
+            bool: True if position closed successfully, False otherwise
+        """
+        try:
+            # Get current position details to determine close order
+            r = positions.PositionDetails(accountID=self.account_id, instrument=instrument)
+            response = self._rate_limited_request(r)
+            
+            long_units = float(response.get('position', {}).get('long', {}).get('units', 0))
+            short_units = float(response.get('position', {}).get('short', {}).get('units', 0))
+            
+            # Prepare close order data
+            data = {}
+            
+            if long_units > 0:
+                data['longUnits'] = 'ALL'
+            
+            if short_units < 0:
+                data['shortUnits'] = 'ALL'
+            
+            if not data:
+                logging.warning(f"No position to close for {instrument}")
+                return False
+            
+            # Close the position
+            r = positions.PositionClose(accountID=self.account_id, instrument=instrument, data=data)
+            response = self._rate_limited_request(r)
+            
+            logging.info(f"✅ Closed position for {instrument} via TP monitoring")
+            
+            # Unregister from risk manager
+            if hasattr(self, 'risk_manager'):
+                self.risk_manager.close_position(instrument)
+            
+            return True
+        
+        except Exception as e:
+            logging.error(f"Failed to close position for {instrument}: {e}")
+            return False
+    
+    def monitor_positions_for_take_profit(self):
+        """
+        Monitor all open positions and close them if take profit is reached.
+        This runs in a separate thread and checks positions periodically.
+        """
+        logging.info(f"📊 Position monitoring started (interval: {self.position_monitor_interval}s)")
+        
+        while not self.position_monitor_stop_event.is_set():
+            try:
+                # Get all open positions with details
+                positions_list = self.get_open_positions_with_details()
+                
+                if not positions_list:
+                    # No open positions, just wait
+                    self.position_monitor_stop_event.wait(self.position_monitor_interval)
+                    continue
+                
+                logging.debug(f"📊 Monitoring {len(positions_list)} open positions for TP")
+                
+                for position in positions_list:
+                    instrument = position['instrument']
+                    
+                    # Get the trade details from database to find the TP target
+                    try:
+                        conn = self.db.db_path
+                        import sqlite3
+                        conn = sqlite3.connect(self.db.db_path)
+                        cursor = conn.cursor()
+                        
+                        # Get most recent open trade for this instrument
+                        cursor.execute('''
+                            SELECT take_profit, atr, stop_loss, entry_price 
+                            FROM trades 
+                            WHERE instrument = ? AND status = 'OPEN'
+                            ORDER BY entry_time DESC 
+                            LIMIT 1
+                        ''', (instrument,))
+                        
+                        result = cursor.fetchone()
+                        conn.close()
+                        
+                        if not result:
+                            logging.debug(f"No open trade record found for {instrument}")
+                            continue
+                        
+                        take_profit_pips, atr, stop_loss_pips, db_entry_price = result
+                        
+                        # Check if we should close at profit
+                        should_close, reason, current_profit_pips = self.should_close_position_at_profit(
+                            position, take_profit_pips
+                        )
+                        
+                        if should_close:
+                            logging.info(f"🎯 Take profit reached for {instrument}: {reason}")
+                            
+                            # Close the position
+                            if self.close_position(instrument):
+                                # Update trade status in database
+                                conn = sqlite3.connect(self.db.db_path)
+                                cursor = conn.cursor()
+                                cursor.execute('''
+                                    UPDATE trades 
+                                    SET status = 'CLOSED_TP_MONITOR', 
+                                        exit_time = CURRENT_TIMESTAMP,
+                                        pnl = ?
+                                    WHERE instrument = ? AND status = 'OPEN'
+                                ''', (position['unrealized_pl'], instrument))
+                                conn.commit()
+                                conn.close()
+                                
+                                logging.info(f"✅ Position closed and database updated for {instrument}")
+                        else:
+                            logging.debug(f"📊 {instrument}: {reason}")
+                    
+                    except Exception as e:
+                        logging.error(f"Error monitoring position for {instrument}: {e}")
+                        continue
+                
+                # Wait for next check interval
+                self.position_monitor_stop_event.wait(self.position_monitor_interval)
+            
+            except Exception as e:
+                logging.error(f"Error in position monitoring loop: {e}")
+                # Wait before retrying
+                self.position_monitor_stop_event.wait(self.position_monitor_interval)
+        
+        logging.info("📊 Position monitoring stopped")
+    
+    def start_position_monitoring(self):
+        """Start the position monitoring thread."""
+        if not self.enable_position_monitoring:
+            logging.info("Position monitoring is disabled in config")
+            return
+        
+        if self.position_monitor_thread and self.position_monitor_thread.is_alive():
+            logging.warning("Position monitoring thread is already running")
+            return
+        
+        self.position_monitor_stop_event.clear()
+        self.position_monitor_thread = threading.Thread(
+            target=self.monitor_positions_for_take_profit,
+            daemon=True,
+            name="PositionMonitor"
+        )
+        self.position_monitor_thread.start()
+        logging.info("✅ Position monitoring thread started")
+    
+    def stop_position_monitoring(self):
+        """Stop the position monitoring thread."""
+        if not self.position_monitor_thread:
+            return
+        
+        logging.info("Stopping position monitoring thread...")
+        self.position_monitor_stop_event.set()
+        
+        # Wait for thread to finish (with timeout)
+        if self.position_monitor_thread.is_alive():
+            self.position_monitor_thread.join(timeout=5)
+        
+        if self.position_monitor_thread.is_alive():
+            logging.warning("Position monitoring thread did not stop cleanly")
+        else:
+            logging.info("✅ Position monitoring thread stopped")
+        
+        self.position_monitor_thread = None
+
     def run_cycle(self):
         print("DEBUG: Entering run_cycle", flush=True)
         cycle_start_time = time.time()
@@ -1049,13 +1316,21 @@ class OandaTradingBot:
 
     def run(self, interval=CHECK_INTERVAL):
         print(f"DEBUG: Entering run method with interval={interval}", flush=True)
-        while True:
-            print("DEBUG: Starting new cycle iteration", flush=True)
-            if not self.run_cycle():
-                print("DEBUG: run_cycle returned False, breaking loop", flush=True)
-                break
-            print(f"DEBUG: Cycle completed, sleeping for {interval} seconds", flush=True)
-            time.sleep(interval)
+        
+        # Start position monitoring thread
+        self.start_position_monitoring()
+        
+        try:
+            while True:
+                print("DEBUG: Starting new cycle iteration", flush=True)
+                if not self.run_cycle():
+                    print("DEBUG: run_cycle returned False, breaking loop", flush=True)
+                    break
+                print(f"DEBUG: Cycle completed, sleeping for {interval} seconds", flush=True)
+                time.sleep(interval)
+        finally:
+            # Stop position monitoring thread when bot stops
+            self.stop_position_monitoring()
 
 if __name__ == '__main__':
     print("DEBUG: In main block, about to create OandaTradingBot", flush=True)

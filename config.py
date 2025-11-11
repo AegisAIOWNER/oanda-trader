@@ -102,6 +102,10 @@ ENABLE_HEALTH_CHECKS = True  # Enable health monitoring
 HEALTH_CHECK_INTERVAL = 3600  # Health check interval in seconds (1 hour)
 MIN_ACCOUNT_BALANCE = 10 if ENVIRONMENT == 'practice' else 100  # Minimum balance to continue trading (10 for practice, 100 for live)
 
+# Position Monitoring (Real-time TP monitoring)
+ENABLE_POSITION_MONITORING = True  # Enable real-time position monitoring for take profit
+POSITION_MONITOR_INTERVAL = 30  # Check open positions every N seconds (default: 30)
+
 # Logging
 ENABLE_STRUCTURED_LOGGING = True  # Enable structured logging with context
 LOG_LEVEL = 'INFO'  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
