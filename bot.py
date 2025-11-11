@@ -499,9 +499,9 @@ class OandaTradingBot:
             }
         }
         if sl_pips:
-            data['order']['stopLossOnFill'] = {'distance': str(sl_pips)}
+            data['order']['stopLossOnFill'] = {'distance': self._round_sl_tp_distance(sl_pips, instrument)}
         if tp_pips:
-            data['order']['takeProfitOnFill'] = {'distance': str(tp_pips)}
+            data['order']['takeProfitOnFill'] = {'distance': self._round_sl_tp_distance(tp_pips, instrument)}
         
         try:
             r = orders.OrderCreate(accountID=self.account_id, data=data)
@@ -749,6 +749,49 @@ class OandaTradingBot:
         else:
             # Fallback to config defaults (already in pips)
             return STOP_LOSS_PIPS, TAKE_PROFIT_PIPS
+    
+    def _round_sl_tp_distance(self, distance_pips, instrument):
+        """Round SL/TP distance to appropriate decimal places based on instrument.
+        
+        Oanda requires that stop loss and take profit distances are specified with
+        precision that matches the instrument's pip location. For example:
+        - EUR_USD (pipLocation=-4): distances should have ~4-5 decimal places
+        - USD_JPY (pipLocation=-2): distances should have ~2-3 decimal places
+        - Commodities/indices may vary based on their pip location
+        
+        Args:
+            distance_pips: Distance value in pips (can be float with high precision)
+            instrument: Trading instrument name (e.g., 'EUR_USD', 'USD_JPY')
+            
+        Returns:
+            str: Rounded distance as string suitable for Oanda API
+        """
+        # Get pip size for the instrument
+        pip_size = self._get_instrument_pip_size(instrument)
+        
+        # Convert pips to price distance
+        price_distance = distance_pips * pip_size
+        
+        # Determine precision based on pip location
+        # Get displayPrecision from instrument metadata if available
+        if instrument in self.instruments_cache:
+            display_precision = self.instruments_cache[instrument].get('displayPrecision', 5)
+        else:
+            # Fallback: determine from pip size
+            # pip_size = 0.0001 -> 4 decimals, pip_size = 0.01 -> 2 decimals
+            if pip_size >= 0.01:
+                display_precision = 2
+            elif pip_size >= 0.001:
+                display_precision = 3
+            else:
+                display_precision = 5
+        
+        # Round the price distance to display precision
+        rounded_distance = round(price_distance, display_precision)
+        
+        # Format as string with appropriate precision
+        # Use format to avoid scientific notation and trailing zeros
+        return f"{rounded_distance:.{display_precision}f}"
 
     def run_cycle(self):
         print("DEBUG: Entering run_cycle", flush=True)
