@@ -166,8 +166,16 @@ class OandaTradingBot:
         logging.info(f"Scanning {len(pairs_to_scan)} pairs for signals... "
                     f"(threshold: {current_threshold:.3f})")
         
+        # Debug: Show the bot's thinking about the threshold
+        threshold_source = "adaptive" if self.enable_adaptive_threshold else "static"
+        logging.info(f"🤖 BOT DECISION: Using {threshold_source} threshold = {current_threshold:.3f}")
+        logging.info(f"🤖 BOT DECISION: Scanning {len(pairs_to_scan)} pairs: {', '.join(pairs_to_scan)}")
+        
         for instrument in pairs_to_scan:
             try:
+                # Debug: Show we're scanning this pair
+                logging.info(f"🔍 BOT DECISION: Scanning pair {instrument}...")
+                
                 # Get primary timeframe data (M5)
                 df_primary = self.get_prices(instrument, count=50, granularity=GRANULARITY)
                 
@@ -186,13 +194,23 @@ class OandaTradingBot:
                     confidence = 1.0 if signal else 0.0
                     atr = 0.0
                 
+                # Debug: Show initial signal detection result
+                if signal:
+                    logging.info(f"   ✓ BOT DECISION: {instrument} generated {signal} signal with initial confidence {confidence:.3f}")
+                else:
+                    logging.info(f"   ✗ BOT DECISION: {instrument} - No signal detected")
+                
                 # Multi-timeframe confirmation (if enabled and signal exists)
                 if signal and self.enable_multiframe:
                     try:
+                        logging.info(f"   🔄 BOT DECISION: {instrument} - Checking multi-timeframe confirmation...")
+                        original_confidence = confidence
                         df_h1 = self.get_prices(instrument, count=50, granularity='H1')
                         signal, confidence, atr = self.mtf_analyzer.confirm_signal(
                             signal, confidence, atr, df_h1, STRATEGY
                         )
+                        if confidence != original_confidence:
+                            logging.info(f"   🔄 BOT DECISION: {instrument} - Multi-timeframe adjusted confidence: {original_confidence:.3f} → {confidence:.3f}")
                     except Exception as e:
                         logging.warning(f"Multi-timeframe analysis failed for {instrument}: {e}")
                 
@@ -200,12 +218,13 @@ class OandaTradingBot:
                 ml_prediction = 0.5  # Default neutral
                 if signal and self.enable_ml and self.ml_predictor:
                     try:
+                        logging.info(f"   🧠 BOT DECISION: {instrument} - Applying ML prediction...")
+                        original_confidence = confidence
                         ml_prediction = self.ml_predictor.predict_probability(df_primary)
                         # Adjust confidence based on ML prediction
                         # Weight: 70% original confidence, 30% ML prediction
                         confidence = confidence * 0.7 + ml_prediction * 0.3
-                        logging.info(f"{instrument}: ML prediction {ml_prediction:.2f}, \
-                                    adjusted confidence {confidence:.2f}")
+                        logging.info(f"   🧠 BOT DECISION: {instrument} - ML prediction {ml_prediction:.2f}, adjusted confidence: {original_confidence:.3f} → {confidence:.3f}")
                     except Exception as e:
                         logging.warning(f"ML prediction failed for {instrument}: {e}")
                 
@@ -218,26 +237,41 @@ class OandaTradingBot:
                         'ml_prediction': ml_prediction,
                         'df': df_primary  # Keep for position sizing calculation
                     })
-                    logging.info(f"{instrument}: {signal} signal with confidence {confidence:.2f}")
+                    logging.info(f"   ✅ BOT DECISION: {instrument} - {signal} signal ACCEPTED with confidence {confidence:.3f} (>= threshold {current_threshold:.3f})")
                 elif signal:
-                    logging.info(f"{instrument}: {signal} signal rejected (confidence {confidence:.2f} < threshold {current_threshold:.3f})")
+                    logging.info(f"   ❌ BOT DECISION: {instrument} - {signal} signal REJECTED: confidence {confidence:.3f} < threshold {current_threshold:.3f}")
                     
             except Exception as e:
                 logging.error(f"Error scanning {instrument}: {e}")
                 continue
+        
+        # Debug: Summary of scan results
+        logging.info(f"🎯 BOT DECISION: Scan complete - Found {len(signals)} qualifying signals out of {len(pairs_to_scan)} pairs scanned")
+        if signals:
+            for sig in signals:
+                logging.info(f"   - {sig['instrument']}: {sig['signal']} (confidence: {sig['confidence']:.3f})")
         
         return signals
     
     def get_best_signal(self, signals):
         """Select the best signal based on confidence score."""
         if not signals:
+            logging.info("🏆 BOT DECISION: No signals to choose from")
             return None
+        
+        # Debug: Show the selection process
+        logging.info(f"🏆 BOT DECISION: Selecting best signal from {len(signals)} candidates...")
         
         # Sort by confidence descending
         sorted_signals = sorted(signals, key=lambda x: x['confidence'], reverse=True)
+        
+        # Debug: Show ranking
+        for i, sig in enumerate(sorted_signals, 1):
+            logging.info(f"   #{i}: {sig['instrument']} {sig['signal']} (confidence: {sig['confidence']:.3f})")
+        
         best = sorted_signals[0]
         
-        logging.info(f"Best signal: {best['instrument']} {best['signal']} (confidence: {best['confidence']:.2f})")
+        logging.info(f"🏆 BOT DECISION: Selected best signal - {best['instrument']} {best['signal']} (confidence: {best['confidence']:.3f})")
         return best
     
     def calculate_atr_stops(self, atr, signal, instrument):
