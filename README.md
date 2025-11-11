@@ -114,11 +114,17 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
   - Market closed detection to prevent failed orders
 
 ### Additional Features
+- **Real-Time Position Monitoring (NEW!)**: 
+  - Background thread monitors open positions every 30 seconds (configurable)
+  - Automatically closes positions when take profit target is reached
+  - Prevents missed profit opportunities due to cycle delays
+  - No waiting for signal reversal or stop loss
+  - Thread-safe implementation with graceful lifecycle management
 - **Margin Checks**: Automatic margin availability verification
 - **Daily Loss Limits**: Stops trading if daily loss exceeds 6%
 - **Multiple Instruments**: Supports ALL tradable instruments on Oanda (100+ instruments including forex, commodities, indices, bonds, CFDs)
 - **CLI Interface**: Easy command-line control with rich options
-- **Comprehensive Testing**: 121 unit tests (66 original + 55 future-proofing) covering all functionality
+- **Comprehensive Testing**: 185 unit tests (121 original + 55 future-proofing + 15 position monitoring) covering all functionality
 
 ## Strategies
 
@@ -214,6 +220,10 @@ MIN_PARTIAL_FILL_PCT = 50  # Minimum acceptable partial fill percentage
 ENABLE_HEALTH_CHECKS = True  # Enable health monitoring
 HEALTH_CHECK_INTERVAL = 3600  # Health check interval in seconds (1 hour)
 MIN_ACCOUNT_BALANCE = 10 if ENVIRONMENT == 'practice' else 100  # Minimum balance to continue trading (10 for practice, 100 for live)
+
+# Position Monitoring (Real-time TP monitoring) (NEW!)
+ENABLE_POSITION_MONITORING = True  # Enable real-time position monitoring for take profit
+POSITION_MONITOR_INTERVAL = 30  # Check open positions every N seconds (default: 30)
 
 # Logging (Future-Proofing) (NEW!)
 ENABLE_STRUCTURED_LOGGING = True  # Enable structured logging with context
@@ -348,6 +358,12 @@ CONFIDENCE_THRESHOLD = 0.8  # Base threshold (adaptive when enabled)
    - **Low Volatility**: Widens stops/targets by 1.5x-2x to avoid whipsaws, lowers threshold more aggressively
    - **Normal/High Volatility**: Uses standard multipliers
 8. **Order Placement**: A single order is placed for the best signal
+9. **Position Monitoring** (NEW!): A background thread monitors all open positions every 30 seconds:
+   - Retrieves current profit for each position in real-time
+   - Calculates profit in pips based on current market price
+   - Closes position immediately when profit >= ATR-based take profit target
+   - Updates database with closure status
+   - Ensures profits are locked in without waiting for next trading cycle
 9. **Safety Checks**: Margin and daily loss limits are verified
 9. **Adaptive Learning** (if enabled): 
    - Threshold automatically adjusts after each cycle based on signal frequency
