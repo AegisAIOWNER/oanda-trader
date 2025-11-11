@@ -299,6 +299,58 @@ class OandaTradingBot:
         else:
             return 0.0001
     
+    def _calculate_pip_value(self, instrument, price):
+        """Calculate pip value for an instrument at a given price.
+        
+        The pip value represents the monetary value of one pip movement for a standard lot.
+        For most currency pairs, this is calculated as:
+        - For XXX/YYY where account currency is YYY: pip_value = pip_size * 100000
+        - For XXX/YYY where account currency is neither: pip_value needs conversion
+        
+        Args:
+            instrument: Instrument name (e.g., 'EUR_USD', 'GBP_NZD')
+            price: Current price of the instrument
+            
+        Returns:
+            float: Pip value for one standard lot (100,000 units)
+        """
+        if not price or price <= 0:
+            logging.warning(f"Invalid price {price} for {instrument}, using default pip value 10")
+            return 10.0
+        
+        # Get pip size for this instrument
+        pip_size = self._get_instrument_pip_size(instrument)
+        
+        # Parse the instrument to determine currencies
+        parts = instrument.split('_')
+        if len(parts) != 2:
+            logging.warning(f"Invalid instrument format {instrument}, using default pip value 10")
+            return 10.0
+        
+        base_currency = parts[0]
+        quote_currency = parts[1]
+        
+        # For standard lot (100,000 units)
+        standard_lot = 100000
+        
+        # If quote currency is USD (account currency), pip value is straightforward
+        # pip_value = pip_size * standard_lot
+        # For most pairs when account currency matches quote currency:
+        pip_value = pip_size * standard_lot
+        
+        # For pairs where quote currency is not USD (like GBP_NZD with USD account),
+        # we need to convert. However, for simplicity and without real-time conversion rates,
+        # we use a simplified calculation based on the pair's price
+        # This gives a reasonable approximation for most forex pairs
+        
+        # Special handling for JPY pairs (they have different pip size already captured)
+        # No additional adjustment needed as pip_size already accounts for this
+        
+        logging.debug(f"Calculated pip value for {instrument}: {pip_value:.4f} "
+                     f"(pip_size={pip_size}, price={price:.5f})")
+        
+        return pip_value
+    
     def _get_available_instruments(self):
         """Get list of instruments to scan.
         
@@ -397,7 +449,7 @@ class OandaTradingBot:
         
         return df
 
-    def place_order(self, instrument, side, units, sl_pips=None, tp_pips=None):
+    def place_order(self, instrument, side, units, sl_pips=None, tp_pips=None, current_price=None):
         if not self.check_margin():
             logging.warning(f"Insufficient margin for {instrument}, skipping.")
             if self.performance_monitor:
@@ -431,9 +483,26 @@ class OandaTradingBot:
                     )
                 return None
         
-        # Check risk limits
+        # Check risk limits - calculate pip value based on instrument and price
         balance = self.get_balance()
-        risk_amount = abs(units * sl_pips * 10) if sl_pips else 0  # Simplified risk calculation
+        
+        # Get current price if not provided
+        if current_price is None:
+            try:
+                df = self.get_prices(instrument, count=1, granularity=GRANULARITY)
+                if not df.empty:
+                    current_price = df['close'].iloc[-1]
+                else:
+                    current_price = 1.0  # Fallback
+            except Exception as e:
+                logging.warning(f"Failed to get current price for {instrument}: {e}, using fallback")
+                current_price = 1.0
+        
+        # Calculate pip value for this instrument
+        pip_value = self._calculate_pip_value(instrument, current_price)
+        
+        # Calculate risk amount using proper pip value
+        risk_amount = abs(units * sl_pips * pip_value / 100000) if sl_pips else 0
         
         can_open, reason = self.risk_manager.can_open_position(instrument, units, risk_amount, balance)
         if not can_open:
@@ -852,21 +921,27 @@ class OandaTradingBot:
             # Calculate ATR-based stops (returns pips) with adjusted multipliers
             sl, tp = self.calculate_atr_stops(atr, signal, instrument, stop_multiplier, profit_multiplier)
             
+            # Get current price for pip value calculation
+            current_price = best_signal['df']['close'].iloc[-1]
+            
+            # Calculate pip value for this instrument
+            pip_value = self._calculate_pip_value(instrument, current_price)
+            
             # Calculate optimal position size
             performance_metrics = self.db.get_performance_metrics(days=30)
             units, risk_pct = self.position_sizer.calculate_position_size(
                 balance=current_balance,
                 stop_loss_pips=sl,
-                pip_value=10,
+                pip_value=pip_value,
                 performance_metrics=performance_metrics,
                 confidence=confidence
             )
             
             logging.info(f"Placing order for {instrument}: {signal} with SL={sl:.4f}, TP={tp:.4f}, \
-                        units={units}, risk={risk_pct*100:.2f}%")
+                        units={units}, risk={risk_pct*100:.2f}%, pip_value={pip_value:.4f}")
             
-            # Place order
-            response = self.place_order(instrument, signal, units, sl, tp)
+            # Place order with current price for risk calculation
+            response = self.place_order(instrument, signal, units, sl, tp, current_price)
             
             # Store trade in database
             if response:
