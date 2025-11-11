@@ -61,64 +61,65 @@ class TestPipValueCalculation(unittest.TestCase):
     def test_pip_value_eur_usd(self):
         """Test pip value calculation for EUR_USD."""
         # EUR_USD at 1.1000, pip size = 0.0001
-        # For standard lot (100,000 units): pip_value = 0.0001 * 100,000 = 10
+        # pip_value (per unit) = pip_size = 0.0001
         instrument = 'EUR_USD'
         price = 1.1000
         
         pip_value = self.bot._calculate_pip_value(instrument, price)
         
-        # For most major pairs, pip value for a standard lot is 10
-        self.assertAlmostEqual(pip_value, 10.0, places=2)
+        # For EUR_USD, pip value per unit equals pip size
+        self.assertAlmostEqual(pip_value, 0.0001, places=5)
     
     def test_pip_value_usd_jpy(self):
         """Test pip value calculation for USD_JPY."""
         # USD_JPY at 110.00, pip size = 0.01
-        # For standard lot (100,000 units): pip_value = 0.01 * 100,000 = 1000
+        # pip_value (per unit) = pip_size = 0.01
         instrument = 'USD_JPY'
         price = 110.00
         
         pip_value = self.bot._calculate_pip_value(instrument, price)
         
-        # USD_JPY has larger pip value due to pip size of 0.01
-        self.assertAlmostEqual(pip_value, 1000.0, places=2)
+        # USD_JPY pip value per unit equals pip size
+        self.assertAlmostEqual(pip_value, 0.01, places=5)
     
     def test_pip_value_gbp_nzd(self):
         """Test pip value calculation for GBP_NZD (exotic pair)."""
         # GBP_NZD at 1.9500, pip size = 0.0001
-        # For standard lot (100,000 units): pip_value = 0.0001 * 100,000 = 10
+        # pip_value (per unit) = pip_size = 0.0001
         instrument = 'GBP_NZD'
         price = 1.9500
         
         pip_value = self.bot._calculate_pip_value(instrument, price)
         
-        # Should calculate based on pip size, not use hardcoded 10
-        self.assertAlmostEqual(pip_value, 10.0, places=2)
+        # Should calculate based on pip size, not use hardcoded value
+        self.assertAlmostEqual(pip_value, 0.0001, places=5)
     
     def test_pip_value_with_invalid_price(self):
         """Test pip value calculation with invalid price."""
         instrument = 'EUR_USD'
         
+        # Even with invalid price, should return pip size (0.0001 for EUR_USD)
         # Test with zero price
         pip_value = self.bot._calculate_pip_value(instrument, 0)
-        self.assertEqual(pip_value, 10.0)  # Should return default
+        self.assertAlmostEqual(pip_value, 0.0001, places=5)
         
         # Test with negative price
         pip_value = self.bot._calculate_pip_value(instrument, -1.0)
-        self.assertEqual(pip_value, 10.0)  # Should return default
+        self.assertAlmostEqual(pip_value, 0.0001, places=5)
         
         # Test with None
         pip_value = self.bot._calculate_pip_value(instrument, None)
-        self.assertEqual(pip_value, 10.0)  # Should return default
+        self.assertAlmostEqual(pip_value, 0.0001, places=5)
     
     def test_pip_value_with_invalid_instrument(self):
         """Test pip value calculation with invalid instrument."""
-        # Test with invalid format
+        # Test with invalid format - should fall back to default pip size (0.0001)
         pip_value = self.bot._calculate_pip_value('INVALID', 1.0)
-        self.assertEqual(pip_value, 10.0)  # Should return default
+        self.assertAlmostEqual(pip_value, 0.0001, places=5)
         
-        # Test with empty string
+        # Test with empty string - should fall back to default pip size (0.0001)
         pip_value = self.bot._calculate_pip_value('', 1.0)
-        self.assertEqual(pip_value, 10.0)  # Should return default
+        self.assertAlmostEqual(pip_value, 0.0001, places=5)
     
     def test_pip_size_retrieval_eur_usd(self):
         """Test that pip size is correctly retrieved for EUR_USD."""
@@ -192,9 +193,9 @@ class TestRiskCalculationWithPipValue(unittest.TestCase):
         
         pip_value = self.bot._calculate_pip_value(instrument, price)
         
-        # Risk amount = units * sl_pips * pip_value / 100000
-        # = 10000 * 10 * 10 / 100000 = 10
-        expected_risk = units * sl_pips * pip_value / 100000
+        # Risk amount = units * sl_pips * pip_value
+        # = 10000 * 10 * 0.0001 = 10
+        expected_risk = units * sl_pips * pip_value
         self.assertAlmostEqual(expected_risk, 10.0, places=2)
     
     def test_risk_amount_calculation_gbp_nzd(self):
@@ -206,11 +207,12 @@ class TestRiskCalculationWithPipValue(unittest.TestCase):
         
         pip_value = self.bot._calculate_pip_value(instrument, price)
         
-        # Should use calculated pip value, not hardcoded 10
-        # Risk amount = units * sl_pips * pip_value / 100000
-        expected_risk = units * sl_pips * pip_value / 100000
+        # Should use calculated pip value, not hardcoded value
+        # Risk amount = units * sl_pips * pip_value
+        # = 10000 * 10 * 0.0001 = 10
+        expected_risk = units * sl_pips * pip_value
         
-        # This should be approximately the same as EUR_USD since both have pip_size = 0.0001
+        # This should be the same as EUR_USD since both have pip_size = 0.0001
         self.assertAlmostEqual(expected_risk, 10.0, places=2)
 
 
