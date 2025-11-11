@@ -14,6 +14,13 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 
 ### Core Trading Features
 - **Advanced Scalping Strategy**: Combines MACD, RSI, Bollinger Bands, ATR, and volume analysis
+- **Dynamic Instrument Selection (NEW!)**: 
+  - Automatically fetches ALL tradable instruments from Oanda API (forex, commodities, indices, bonds, CFDs)
+  - Randomly selects subset up to MAX_PAIRS_TO_SCAN each cycle to maximize market coverage
+  - Dynamically determines pip sizes from instrument metadata (pipLocation)
+  - Caches instruments for 24 hours to reduce API calls
+  - Fallback to config instruments if API unavailable
+  - Enable with `ENABLE_DYNAMIC_INSTRUMENTS = True` in config
 - **Dynamic Pair Selection**: Scans multiple pairs and trades the strongest signal
 - **Confidence Scoring**: 0.0-1.0 scoring system filters weak signals
 - **Adaptive Risk Management**: ATR-based stop losses and take profits
@@ -82,9 +89,9 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 ### Additional Features
 - **Margin Checks**: Automatic margin availability verification
 - **Daily Loss Limits**: Stops trading if daily loss exceeds 6%
-- **Multiple Instruments**: Supports 8+ currency pairs
+- **Multiple Instruments**: Supports ALL tradable instruments on Oanda (100+ instruments including forex, commodities, indices, bonds, CFDs)
 - **CLI Interface**: Easy command-line control with rich options
-- **Comprehensive Testing**: 56 unit tests covering core functionality including volatility detection
+- **Comprehensive Testing**: 49 unit tests covering core functionality including dynamic instruments and volatility detection
 
 ## Strategies
 
@@ -145,6 +152,10 @@ VOLATILITY_LOW_THRESHOLD = 0.0005  # ATR threshold for low volatility (5 pips)
 VOLATILITY_NORMAL_THRESHOLD = 0.0015  # ATR threshold for normal/high volatility (15 pips)
 VOLATILITY_ADJUSTMENT_MODE = 'adaptive'  # 'aggressive_threshold', 'widen_stops', 'skip_cycles', or 'adaptive' (all)
 VOLATILITY_ATR_WINDOW = 10  # Number of cycles to average ATR for detection
+
+# Dynamic Instrument Selection (NEW!)
+ENABLE_DYNAMIC_INSTRUMENTS = True  # Enable dynamic instrument selection from all available instruments
+DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before refreshing
 ```
 
 ## Usage
@@ -247,12 +258,16 @@ ADAPTIVE_MAX_THRESHOLD = 0.95
 ADAPTIVE_NO_SIGNAL_CYCLES = 5
 ADAPTIVE_ADJUSTMENT_STEP = 0.02
 
-# Volatility Detection (NEW!)
+# Volatility Detection
 ENABLE_VOLATILITY_DETECTION = True
 VOLATILITY_LOW_THRESHOLD = 0.0005
 VOLATILITY_NORMAL_THRESHOLD = 0.0015
 VOLATILITY_ADJUSTMENT_MODE = 'adaptive'
 VOLATILITY_ATR_WINDOW = 10
+
+# Dynamic Instrument Selection (NEW!)
+ENABLE_DYNAMIC_INSTRUMENTS = True  # Enable dynamic instrument selection
+DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Cache instruments for 24 hours
 
 # Strategy
 STRATEGY = 'advanced_scalp'
@@ -261,16 +276,17 @@ CONFIDENCE_THRESHOLD = 0.8  # Base threshold (adaptive when enabled)
 
 ## How It Works
 
-1. **Pair Scanning**: Bot scans configured instruments for signals
-2. **Volatility Detection** (if enabled): Calculates average ATR across all scanned pairs to determine market volatility state
-3. **Signal Evaluation**: Each pair is evaluated using the selected strategy
-4. **Confidence Filtering**: Only signals above the confidence threshold are considered (threshold is dynamic if adaptive mode enabled)
-5. **Best Signal Selection**: The pair with the highest confidence is selected
-6. **Volatility-Adjusted Risk Calculation**: ATR-based stops and targets are calculated, with adjustments based on volatility state:
+1. **Dynamic Instrument Loading** (if enabled): On startup, bot fetches all tradable instruments from Oanda API and caches their metadata
+2. **Pair Scanning**: Bot randomly selects up to MAX_PAIRS_TO_SCAN instruments from available pool (or uses config list if dynamic mode disabled)
+3. **Volatility Detection** (if enabled): Calculates average ATR across all scanned pairs to determine market volatility state
+4. **Signal Evaluation**: Each pair is evaluated using the selected strategy
+5. **Confidence Filtering**: Only signals above the confidence threshold are considered (threshold is dynamic if adaptive mode enabled)
+6. **Best Signal Selection**: The pair with the highest confidence is selected
+7. **Volatility-Adjusted Risk Calculation**: ATR-based stops and targets are calculated using dynamic pip sizes from instrument metadata, with adjustments based on volatility state:
    - **Low Volatility**: Widens stops/targets by 1.5x-2x to avoid whipsaws, lowers threshold more aggressively
    - **Normal/High Volatility**: Uses standard multipliers
-7. **Order Placement**: A single order is placed for the best signal
-8. **Safety Checks**: Margin and daily loss limits are verified
+8. **Order Placement**: A single order is placed for the best signal
+9. **Safety Checks**: Margin and daily loss limits are verified
 9. **Adaptive Learning** (if enabled): 
    - Threshold automatically adjusts after each cycle based on signal frequency
    - Adjustment speed increases 2x-3x in low volatility conditions
