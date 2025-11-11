@@ -24,7 +24,7 @@ TAKE_PROFIT_PIPS = 10  # Smaller targets (will be overridden by ATR-based target
 MAX_DAILY_LOSS_PERCENT = 6.0  # Daily stop
 
 # Advanced scalping settings
-MAX_PAIRS_TO_SCAN = 10  # Maximum number of pairs to scan for signals
+MAX_PAIRS_TO_SCAN = 25  # Maximum number of pairs to scan for signals
 CONFIDENCE_THRESHOLD = 0.8  # Minimum confidence score to place a trade (0.0 to 1.0)
 ATR_PERIOD = 14  # Period for ATR calculation
 ATR_STOP_MULTIPLIER = 1.5  # Multiplier for ATR-based stop loss
