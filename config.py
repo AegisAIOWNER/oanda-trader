@@ -25,7 +25,7 @@ MAX_DAILY_LOSS_PERCENT = 6.0  # Daily stop
 
 # Advanced scalping settings
 MAX_PAIRS_TO_SCAN = 25  # Maximum number of pairs to scan for signals
-CONFIDENCE_THRESHOLD = 0.8  # Minimum confidence score to place a trade (0.0 to 1.0)
+CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence score to place a trade (0.0 to 1.0) - lowered for more trades
 ATR_PERIOD = 14  # Period for ATR calculation
 ATR_STOP_MULTIPLIER = 1.5  # Multiplier for ATR-based stop loss
 ATR_PROFIT_MULTIPLIER = 2.5  # Multiplier for ATR-based take profit
@@ -35,7 +35,7 @@ MIN_VOLUME_RATIO = 1.2  # Minimum volume ratio for confirmation (current volume 
 # Machine Learning settings
 ENABLE_ML = True  # Enable ML predictions for enhanced decision making
 ML_MODEL_PATH = 'models/rf_model.pkl'  # Path to store ML model
-ML_MIN_TRAINING_SAMPLES = 10  # Minimum samples required for training (reduced for faster integration)
+ML_MIN_TRAINING_SAMPLES = 5  # Minimum samples required for training (reduced for faster integration)
 ML_AUTO_TRAIN_INTERVAL = 10  # Automatically retrain model after N new trades
 
 # Position Sizing settings
@@ -69,7 +69,7 @@ DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before ref
 
 # Enhanced Risk Management settings (future-proofing)
 MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions
-MAX_RISK_PER_TRADE = 0.05  # Maximum risk per trade (5% of balance) - increased for more trades
+MAX_RISK_PER_TRADE = 0.01  # Maximum risk per trade (1% of balance) - lowered for smaller positions
 MAX_TOTAL_RISK = 0.15  # Maximum total risk across all positions (15% of balance) - adjusted for higher individual risk
 MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments (same base currency)
 MAX_UNITS_PER_INSTRUMENT = 100000  # Maximum units per instrument
