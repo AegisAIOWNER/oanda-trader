@@ -182,7 +182,7 @@ class OandaTradingBot:
         return hours_since_cache >= DYNAMIC_INSTRUMENT_CACHE_HOURS
     
     def _get_instrument_pip_size(self, instrument):
-        """Get pip size for an instrument from cache.
+        """Get pip size for an instrument from cache or fetch from API.
         
         Args:
             instrument: Instrument name (e.g., 'EUR_USD', 'USD_JPY')
@@ -190,15 +190,44 @@ class OandaTradingBot:
         Returns:
             float: Pip size (e.g., 0.0001 for EUR_USD, 0.01 for USD_JPY)
         """
-        if self.enable_dynamic_instruments and instrument in self.instruments_cache:
+        # Check if instrument is in cache
+        if instrument in self.instruments_cache:
             pip_location = self.instruments_cache[instrument]['pipLocation']
             return 10 ** pip_location
+        
+        # If not in cache, try to fetch from API
+        if self.enable_dynamic_instruments:
+            try:
+                r = accounts.AccountInstruments(accountID=self.account_id)
+                response = self._rate_limited_request(r)
+                
+                instruments_list = response.get('instruments', [])
+                for inst in instruments_list:
+                    if inst.get('name') == instrument:
+                        # Cache this instrument for future use
+                        self.instruments_cache[instrument] = {
+                            'pipLocation': inst.get('pipLocation', -4),
+                            'displayName': inst.get('displayName', instrument),
+                            'type': inst.get('type', 'CURRENCY'),
+                            'displayPrecision': inst.get('displayPrecision', 5),
+                            'tradeUnitsPrecision': inst.get('tradeUnitsPrecision', 0),
+                            'minimumTradeSize': inst.get('minimumTradeSize', '1'),
+                            'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000')
+                        }
+                        pip_location = inst.get('pipLocation', -4)
+                        return 10 ** pip_location
+                
+                # If instrument not found in API response, log warning
+                logging.warning(f"Instrument {instrument} not found in API response")
+            except Exception as e:
+                logging.error(f"Failed to fetch instrument {instrument} from API: {e}")
+        
+        # Final fallback to legacy logic (only when API unavailable)
+        logging.warning(f"Using legacy pip size logic for {instrument}")
+        if 'JPY' in instrument:
+            return 0.01
         else:
-            # Fallback to legacy logic
-            if 'JPY' in instrument:
-                return 0.01
-            else:
-                return 0.0001
+            return 0.0001
     
     def _get_available_instruments(self):
         """Get list of instruments to scan.
