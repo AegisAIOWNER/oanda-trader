@@ -61,3 +61,7 @@ VOLATILITY_LOW_THRESHOLD = 0.0005  # ATR threshold for low volatility (e.g., 5 p
 VOLATILITY_NORMAL_THRESHOLD = 0.0015  # ATR threshold for normal/high volatility (e.g., 15 pips)
 VOLATILITY_ADJUSTMENT_MODE = 'adaptive'  # How to adjust: 'aggressive_threshold', 'widen_stops', 'skip_cycles', 'adaptive' (all)
 VOLATILITY_ATR_WINDOW = 10  # Number of cycles to average ATR for volatility detection
+
+# Dynamic Instrument Selection settings
+ENABLE_DYNAMIC_INSTRUMENTS = True  # Enable dynamic instrument selection from all available instruments
+DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before refreshing
