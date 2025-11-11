@@ -168,7 +168,7 @@ CONFIDENCE_THRESHOLD = 0.8  # Base confidence for trades (can be adaptive)
 INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', ...]
 
 # Risk Management
-ATR_STOP_MULTIPLIER = 1.5  # Stop loss = 1.5 × ATR
+ATR_STOP_MULTIPLIER = 1.0  # Stop loss = 1.0 × ATR
 ATR_PROFIT_MULTIPLIER = 2.5  # Take profit = 2.5 × ATR
 MAX_DAILY_LOSS_PERCENT = 6.0  # Daily loss limit
 

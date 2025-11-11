@@ -37,7 +37,7 @@ TRAILING_STOP_ACTIVATION_MULTIPLIER = 1.0  # Activate after 1x ATR profit
 **Example:**
 ```
 Position: BUY EUR_USD at 1.1000
-Initial SL: 1.0950 (50 pips below entry, 1.5x ATR)
+Initial SL: 1.0966 (34 pips below entry, 1.0x ATR)
 ATR: 100 pips
 Activation threshold: 100 pips profit (1.0x ATR)
 
