@@ -317,6 +317,39 @@ class OandaTradingBot:
             # Return config instruments
             return INSTRUMENTS
 
+    def get_open_position_instruments(self):
+        """Get list of instruments with currently open positions.
+        
+        Returns:
+            list: List of instrument names that have open positions
+        """
+        try:
+            r = positions.OpenPositions(accountID=self.account_id)
+            response = self._rate_limited_request(r)
+            api_positions = response.get('positions', [])
+            
+            open_instruments = []
+            for pos in api_positions:
+                instrument = pos.get('instrument')
+                if not instrument:
+                    continue
+                
+                long_units = float(pos.get('long', {}).get('units', 0))
+                short_units = float(pos.get('short', {}).get('units', 0))
+                
+                # Calculate net position
+                net_units = long_units + short_units  # short_units is negative
+                
+                if net_units != 0:
+                    open_instruments.append(instrument)
+            
+            logging.debug(f"Found {len(open_instruments)} open positions: {open_instruments}")
+            return open_instruments
+        
+        except Exception as e:
+            logging.warning(f"Failed to get open positions: {e}")
+            return []
+    
     def get_balance(self):
         r = accounts.AccountSummary(accountID=self.account_id)
         response = self._rate_limited_request(r)
@@ -476,15 +509,33 @@ class OandaTradingBot:
         # Get available instruments (dynamic or config-based)
         available_instruments = self._get_available_instruments()
         
-        # Select pairs to scan - randomly sample if dynamic, or limit to MAX_PAIRS_TO_SCAN
-        if self.enable_dynamic_instruments and len(available_instruments) > MAX_PAIRS_TO_SCAN:
-            # Randomly select a subset to comply with API limits
-            pairs_to_scan = random.sample(available_instruments, MAX_PAIRS_TO_SCAN)
-            selection_mode = "random"
-        else:
-            # Use first N instruments (backward compatible)
-            pairs_to_scan = available_instruments[:MAX_PAIRS_TO_SCAN]
-            selection_mode = "sequential"
+        # Get currently open position instruments to prioritize
+        open_position_instruments = self.get_open_position_instruments()
+        
+        # Select pairs to scan - prioritize open positions, then fill with random/sequential
+        pairs_to_scan = []
+        selection_mode = "prioritized"
+        
+        # First, add all open position instruments (up to MAX_OPEN_POSITIONS)
+        for instrument in open_position_instruments[:MAX_OPEN_POSITIONS]:
+            if instrument in available_instruments:
+                pairs_to_scan.append(instrument)
+        
+        # Calculate remaining slots after adding open positions
+        remaining_slots = MAX_PAIRS_TO_SCAN - len(pairs_to_scan)
+        
+        if remaining_slots > 0:
+            # Get instruments that are not already in pairs_to_scan
+            remaining_instruments = [inst for inst in available_instruments if inst not in pairs_to_scan]
+            
+            if self.enable_dynamic_instruments and len(remaining_instruments) > remaining_slots:
+                # Randomly select from remaining to fill slots
+                pairs_to_scan.extend(random.sample(remaining_instruments, remaining_slots))
+                selection_mode = "prioritized+random"
+            else:
+                # Use first N remaining instruments (backward compatible)
+                pairs_to_scan.extend(remaining_instruments[:remaining_slots])
+                selection_mode = "prioritized+sequential"
         
         # Batch request optimization - collect all data first
         print(f"Scanning {len(pairs_to_scan)} pairs for signals ({selection_mode} selection from {len(available_instruments)} available)... "
@@ -495,6 +546,8 @@ class OandaTradingBot:
         instrument_source = "dynamic (API)" if self.enable_dynamic_instruments else "static (config)"
         print(f"🤖 BOT DECISION: Using {threshold_source} threshold = {current_threshold:.3f}", flush=True)
         print(f"🤖 BOT DECISION: Using {instrument_source} instrument list", flush=True)
+        if open_position_instruments:
+            print(f"🎯 BOT DECISION: Prioritizing {len(open_position_instruments)} open positions: {', '.join(open_position_instruments)}", flush=True)
         print(f"🤖 BOT DECISION: Scanning {len(pairs_to_scan)} pairs: {', '.join(pairs_to_scan)}", flush=True)
         
         for instrument in pairs_to_scan:
