@@ -183,6 +183,102 @@ class TestAdaptiveThresholdIntegration(unittest.TestCase):
             self.assertLess(self.manager.current_threshold, threshold_before)
         
         print("\n=== Performance-Based Adjustment Logic Test Complete ===")
+    
+    def test_threshold_persistence_across_restarts(self):
+        """Test that threshold persists across bot restarts."""
+        print("\n=== Testing Threshold Persistence Across Restarts ===")
+        
+        # Simulate first bot session
+        print("\nSimulation 1: First bot session")
+        initial_threshold = 0.8
+        print(f"  Starting with base threshold: {initial_threshold:.3f}")
+        
+        # Manager starts with base threshold
+        self.assertEqual(self.manager.get_current_threshold(), initial_threshold,
+                        "Should start with base threshold on first run")
+        
+        # Make some adjustments
+        print("\n  Making adjustments...")
+        for _ in range(5):
+            self.manager.update_on_cycle(signals_found=0)
+        
+        adjusted_threshold = self.manager.get_current_threshold()
+        print(f"  Threshold after adjustments: {adjusted_threshold:.3f}")
+        self.assertNotEqual(adjusted_threshold, initial_threshold,
+                          "Threshold should have been adjusted")
+        
+        # Simulate bot restart - create a new manager with the same database
+        print("\nSimulation 2: Bot restart (new manager instance)")
+        new_manager = AdaptiveThresholdManager(
+            base_threshold=0.8,
+            db=self.db,
+            min_threshold=0.5,
+            max_threshold=0.95,
+            no_signal_cycles_trigger=5,
+            adjustment_step=0.02
+        )
+        
+        loaded_threshold = new_manager.get_current_threshold()
+        print(f"  Loaded threshold from database: {loaded_threshold:.3f}")
+        
+        # The new manager should load the last adjusted threshold
+        self.assertEqual(loaded_threshold, adjusted_threshold,
+                        "New manager should load the last adjusted threshold from database")
+        self.assertNotEqual(loaded_threshold, initial_threshold,
+                          "Loaded threshold should not reset to base value")
+        
+        print(f"\n  ✅ Success! Threshold persisted: {adjusted_threshold:.3f}")
+        
+        # Test that further adjustments work correctly
+        print("\n  Making more adjustments after restart...")
+        threshold_before = new_manager.get_current_threshold()
+        
+        # Add trades to trigger performance-based adjustment
+        for i in range(10):
+            trade_data = {
+                'instrument': 'EUR_USD',
+                'signal': 'BUY',
+                'confidence': 0.85,
+                'entry_price': 1.1000,
+                'stop_loss': 0.001,
+                'take_profit': 0.002,
+                'units': 1000,
+                'atr': 0.0001,
+                'ml_prediction': 0.7,
+                'position_size_pct': 0.02
+            }
+            trade_id = self.db.store_trade(trade_data)
+            # All winning trades
+            self.db.update_trade(trade_id, 1.1010, 20.0, 'closed')
+        
+        performance = self.db.get_performance_metrics(days=30)
+        new_manager.update_on_trade_result(
+            trade_profitable=True,
+            recent_performance=performance
+        )
+        
+        threshold_after = new_manager.get_current_threshold()
+        print(f"  Threshold after more adjustments: {threshold_after:.3f}")
+        
+        # Verify one more restart to ensure persistence continues
+        print("\nSimulation 3: Another bot restart")
+        final_manager = AdaptiveThresholdManager(
+            base_threshold=0.8,
+            db=self.db,
+            min_threshold=0.5,
+            max_threshold=0.95,
+            no_signal_cycles_trigger=5,
+            adjustment_step=0.02
+        )
+        
+        final_threshold = final_manager.get_current_threshold()
+        print(f"  Final loaded threshold: {final_threshold:.3f}")
+        
+        self.assertEqual(final_threshold, threshold_after,
+                        "Threshold should persist through multiple restarts")
+        
+        print("\n=== Threshold Persistence Test Complete ===")
+        print("✅ Threshold successfully persists across bot restarts!")
 
 
 if __name__ == '__main__':

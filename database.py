@@ -223,6 +223,25 @@ class TradeDatabase:
         
         return [dict(zip(columns, adj)) for adj in adjustments]
     
+    def get_last_threshold(self):
+        """Get the last adjusted threshold value from the database.
+        
+        Returns:
+            float: The last threshold value, or None if no adjustments exist
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT new_threshold FROM threshold_adjustments 
+            ORDER BY id DESC LIMIT 1
+        ''')
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        return result[0] if result else None
+    
     def close(self):
         """Close method for compatibility with tests (no-op since we use connection per operation)."""
         pass
