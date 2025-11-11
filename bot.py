@@ -16,14 +16,16 @@ from position_sizing import PositionSizer
 from multi_timeframe import MultiTimeframeAnalyzer
 from error_recovery import ExponentialBackoff, api_circuit_breaker
 from adaptive_threshold import AdaptiveThresholdManager
+from volatility_detector import VolatilityDetector
 print("DEBUG: All imports completed successfully", flush=True)
 
 class OandaTradingBot:
     def __init__(self, enable_ml=True, enable_multiframe=True, position_sizing_method='fixed_percentage',
-                 enable_adaptive_threshold=True):
+                 enable_adaptive_threshold=True, enable_volatility_detection=True):
         print("DEBUG: Entering OandaTradingBot.__init__", flush=True)
         print(f"DEBUG: Parameters - ML: {enable_ml}, Multiframe: {enable_multiframe}, "
-              f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}", flush=True)
+              f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}, "
+              f"Volatility detection: {enable_volatility_detection}", flush=True)
         self.api = oandapyV20.API(access_token=API_KEY, environment=ENVIRONMENT)
         self.account_id = ACCOUNT_ID
         self.last_request_time = time.time()
@@ -60,7 +62,18 @@ class OandaTradingBot:
                                                     confirmation_timeframe='H1') if enable_multiframe else None
         print("DEBUG: Multi-timeframe analyzer initialized", flush=True)
         
-        # Initialize adaptive threshold manager
+        # Initialize volatility detector
+        print(f"DEBUG: Initializing volatility detector (enabled: {enable_volatility_detection})...", flush=True)
+        self.enable_volatility_detection = enable_volatility_detection
+        self.volatility_detector = VolatilityDetector(
+            low_threshold=VOLATILITY_LOW_THRESHOLD,
+            normal_threshold=VOLATILITY_NORMAL_THRESHOLD,
+            adjustment_mode=VOLATILITY_ADJUSTMENT_MODE,
+            atr_window=VOLATILITY_ATR_WINDOW
+        ) if enable_volatility_detection else None
+        print("DEBUG: Volatility detector initialized", flush=True)
+        
+        # Initialize adaptive threshold manager (with volatility detector if enabled)
         print(f"DEBUG: Initializing adaptive threshold manager (enabled: {enable_adaptive_threshold})...", flush=True)
         self.enable_adaptive_threshold = enable_adaptive_threshold
         self.adaptive_threshold_mgr = AdaptiveThresholdManager(
@@ -69,13 +82,15 @@ class OandaTradingBot:
             min_threshold=ADAPTIVE_MIN_THRESHOLD,
             max_threshold=ADAPTIVE_MAX_THRESHOLD,
             no_signal_cycles_trigger=ADAPTIVE_NO_SIGNAL_CYCLES,
-            adjustment_step=ADAPTIVE_ADJUSTMENT_STEP
+            adjustment_step=ADAPTIVE_ADJUSTMENT_STEP,
+            volatility_detector=self.volatility_detector
         ) if enable_adaptive_threshold else None
         print("DEBUG: Adaptive threshold manager initialized", flush=True)
         
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
-                     f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}")
+                     f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}, "
+                     f"Volatility detection: {enable_volatility_detection}")
         print("DEBUG: OandaTradingBot.__init__ completed successfully", flush=True)
 
     def _rate_limited_request(self, endpoint):
@@ -153,6 +168,7 @@ class OandaTradingBot:
     def scan_pairs_for_signals(self):
         """Scan all configured pairs and return signals with confidence scores."""
         signals = []
+        atr_readings = []  # Collect ATR values for volatility detection
         
         # Get current threshold (adaptive or static)
         current_threshold = (self.adaptive_threshold_mgr.get_current_threshold() 
@@ -193,6 +209,10 @@ class OandaTradingBot:
                     signal = get_signal(df_primary, STRATEGY)
                     confidence = 1.0 if signal else 0.0
                     atr = 0.0
+                
+                # Collect ATR for volatility detection
+                if atr > 0:
+                    atr_readings.append(atr)
                 
                 # Debug: Show initial signal detection result
                 if signal:
@@ -251,7 +271,9 @@ class OandaTradingBot:
             for sig in signals:
                 print(f"   - {sig['instrument']}: {sig['signal']} (confidence: {sig['confidence']:.3f})", flush=True)
         
-        return signals
+        # Store ATR readings for volatility detection
+        # Return both signals and atr_readings
+        return signals, atr_readings
     
     def get_best_signal(self, signals):
         """Select the best signal based on confidence score."""
@@ -274,17 +296,23 @@ class OandaTradingBot:
         print(f"🏆 BOT DECISION: Selected best signal - {best['instrument']} {best['signal']} (confidence: {best['confidence']:.3f})", flush=True)
         return best
     
-    def calculate_atr_stops(self, atr, signal, instrument):
+    def calculate_atr_stops(self, atr, signal, instrument, stop_multiplier=None, profit_multiplier=None):
         """Calculate ATR-based stop loss and take profit in pips.
         
         Args:
             atr: ATR value in price units
             signal: Trading signal ('BUY' or 'SELL')
             instrument: Trading instrument (e.g., 'EUR_USD', 'USD_JPY')
+            stop_multiplier: Optional override for ATR stop multiplier (for volatility adjustments)
+            profit_multiplier: Optional override for ATR profit multiplier (for volatility adjustments)
             
         Returns:
             tuple: (stop_loss_pips, take_profit_pips)
         """
+        # Use provided multipliers or fall back to config defaults
+        stop_mult = stop_multiplier if stop_multiplier is not None else ATR_STOP_MULTIPLIER
+        profit_mult = profit_multiplier if profit_multiplier is not None else ATR_PROFIT_MULTIPLIER
+        
         # Determine pip size based on instrument
         if 'JPY' in instrument:
             pip_size = 0.01  # Japanese Yen pairs use 2 decimal places
@@ -292,9 +320,9 @@ class OandaTradingBot:
             pip_size = 0.0001  # Most pairs use 4 decimal places
         
         if atr > 0:
-            # Calculate price distances
-            sl_price = atr * ATR_STOP_MULTIPLIER
-            tp_price = atr * ATR_PROFIT_MULTIPLIER
+            # Calculate price distances with potentially adjusted multipliers
+            sl_price = atr * stop_mult
+            tp_price = atr * profit_mult
             
             # Convert price distances to pips
             sl_pips = sl_price / pip_size
@@ -321,15 +349,64 @@ class OandaTradingBot:
             logging.warning("Insufficient margin available, skipping this cycle.")
             return True
         
-        # Scan all pairs for signals
-        signals = self.scan_pairs_for_signals()
+        # Scan all pairs for signals (now returns signals and atr_readings)
+        signals, atr_readings = self.scan_pairs_for_signals()
+        
+        # Detect market volatility
+        volatility_info = None
+        threshold_adjusted = False
+        stops_adjusted = False
+        cycle_skipped = False
+        
+        if self.enable_volatility_detection and self.volatility_detector:
+            volatility_info = self.volatility_detector.detect_volatility(atr_readings)
+            
+            # Check if we should skip this cycle due to low volatility
+            skip_decision = self.volatility_detector.should_skip_cycle()
+            if skip_decision['skip']:
+                logging.info(f"⏸️  Skipping cycle due to low volatility: {skip_decision['reason']}")
+                cycle_skipped = True
+                
+                # Store volatility reading in database
+                if self.db:
+                    vol_data = {
+                        'avg_atr': volatility_info['avg_atr'],
+                        'state': volatility_info['state'],
+                        'confidence': volatility_info['confidence'],
+                        'readings_count': volatility_info['readings_count'],
+                        'consecutive_low_cycles': volatility_info.get('consecutive_low_cycles', 0),
+                        'adjustment_mode': VOLATILITY_ADJUSTMENT_MODE,
+                        'threshold_adjusted': False,
+                        'stops_adjusted': False,
+                        'cycle_skipped': True
+                    }
+                    self.db.store_volatility_reading(vol_data)
+                
+                return True  # Continue but skip this cycle
         
         # Update adaptive threshold based on signal frequency
+        # (Note: adaptive threshold manager now uses volatility detector internally)
         if self.enable_adaptive_threshold:
-            self.adaptive_threshold_mgr.update_on_cycle(len(signals))
+            threshold_adjusted = self.adaptive_threshold_mgr.update_on_cycle(len(signals))
         
         if not signals:
             logging.info("No signals found in this cycle.")
+            
+            # Store volatility reading even when no signals
+            if self.enable_volatility_detection and self.db and volatility_info:
+                vol_data = {
+                    'avg_atr': volatility_info['avg_atr'],
+                    'state': volatility_info['state'],
+                    'confidence': volatility_info['confidence'],
+                    'readings_count': volatility_info['readings_count'],
+                    'consecutive_low_cycles': volatility_info.get('consecutive_low_cycles', 0),
+                    'adjustment_mode': VOLATILITY_ADJUSTMENT_MODE,
+                    'threshold_adjusted': threshold_adjusted,
+                    'stops_adjusted': False,
+                    'cycle_skipped': False
+                }
+                self.db.store_volatility_reading(vol_data)
+            
             return True
         
         # Get the best signal (highest confidence)
@@ -342,8 +419,23 @@ class OandaTradingBot:
             confidence = best_signal['confidence']
             ml_prediction = best_signal.get('ml_prediction', 0.5)
             
-            # Calculate ATR-based stops (returns pips)
-            sl, tp = self.calculate_atr_stops(atr, signal, instrument)
+            # Get volatility-adjusted stop/profit multipliers if applicable
+            stop_multiplier = ATR_STOP_MULTIPLIER
+            profit_multiplier = ATR_PROFIT_MULTIPLIER
+            
+            if self.enable_volatility_detection and self.volatility_detector:
+                sp_adjustment = self.volatility_detector.get_stop_profit_adjustment(
+                    ATR_STOP_MULTIPLIER, ATR_PROFIT_MULTIPLIER
+                )
+                stop_multiplier = sp_adjustment['stop_multiplier']
+                profit_multiplier = sp_adjustment['profit_multiplier']
+                if stop_multiplier != ATR_STOP_MULTIPLIER or profit_multiplier != ATR_PROFIT_MULTIPLIER:
+                    stops_adjusted = True
+                    logging.info(f"🎯 Using volatility-adjusted multipliers: "
+                               f"stop={stop_multiplier:.2f}x, profit={profit_multiplier:.2f}x")
+            
+            # Calculate ATR-based stops (returns pips) with adjusted multipliers
+            sl, tp = self.calculate_atr_stops(atr, signal, instrument, stop_multiplier, profit_multiplier)
             
             # Calculate optimal position size
             performance_metrics = self.db.get_performance_metrics(days=30)
@@ -390,6 +482,21 @@ class OandaTradingBot:
                             trade_profitable=None,  # Unknown yet
                             recent_performance=perf
                         )
+                
+                # Store volatility reading with trade execution context
+                if self.enable_volatility_detection and self.db and volatility_info:
+                    vol_data = {
+                        'avg_atr': volatility_info['avg_atr'],
+                        'state': volatility_info['state'],
+                        'confidence': volatility_info['confidence'],
+                        'readings_count': volatility_info['readings_count'],
+                        'consecutive_low_cycles': volatility_info.get('consecutive_low_cycles', 0),
+                        'adjustment_mode': VOLATILITY_ADJUSTMENT_MODE,
+                        'threshold_adjusted': threshold_adjusted,
+                        'stops_adjusted': stops_adjusted,
+                        'cycle_skipped': False
+                    }
+                    self.db.store_volatility_reading(vol_data)
         
         return True
 

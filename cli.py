@@ -21,7 +21,9 @@ def cli():
               help='Position sizing method')
 @click.option('--enable-adaptive-threshold/--no-adaptive-threshold', default=True, 
               help='Enable autonomous adaptive confidence threshold')
-def start(enable_ml, enable_multiframe, position_sizing, enable_adaptive_threshold):
+@click.option('--enable-volatility-detection/--no-volatility-detection', default=True,
+              help='Enable market volatility detection and conditional strategy adjustments')
+def start(enable_ml, enable_multiframe, position_sizing, enable_adaptive_threshold, enable_volatility_detection):
     """Start the trading bot with configurable features."""
     print("DEBUG: Entering start command", flush=True)
     click.echo(f"Starting trading bot...")
@@ -29,13 +31,15 @@ def start(enable_ml, enable_multiframe, position_sizing, enable_adaptive_thresho
     click.echo(f"  Multi-timeframe: {enable_multiframe}")
     click.echo(f"  Position Sizing: {position_sizing}")
     click.echo(f"  Adaptive Threshold: {enable_adaptive_threshold}")
+    click.echo(f"  Volatility Detection: {enable_volatility_detection}")
     
     print("DEBUG: About to create OandaTradingBot from CLI", flush=True)
     bot = OandaTradingBot(
         enable_ml=enable_ml,
         enable_multiframe=enable_multiframe,
         position_sizing_method=position_sizing,
-        enable_adaptive_threshold=enable_adaptive_threshold
+        enable_adaptive_threshold=enable_adaptive_threshold,
+        enable_volatility_detection=enable_volatility_detection
     )
     print("DEBUG: Bot created from CLI, about to call bot.run()", flush=True)
     bot.run()

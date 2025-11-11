@@ -54,3 +54,10 @@ ADAPTIVE_MAX_THRESHOLD = 0.95  # Maximum allowed threshold (safety ceiling)
 ADAPTIVE_NO_SIGNAL_CYCLES = 5  # Cycles without signals before lowering threshold
 ADAPTIVE_ADJUSTMENT_STEP = 0.02  # Threshold adjustment step size (2%)
 ADAPTIVE_MIN_TRADES_FOR_ADJUSTMENT = 5  # Minimum trades before performance-based adjustments
+
+# Volatility Detection settings (adaptive strategy adjustments)
+ENABLE_VOLATILITY_DETECTION = True  # Enable market volatility detection
+VOLATILITY_LOW_THRESHOLD = 0.0005  # ATR threshold for low volatility (e.g., 5 pips for most pairs)
+VOLATILITY_NORMAL_THRESHOLD = 0.0015  # ATR threshold for normal/high volatility (e.g., 15 pips)
+VOLATILITY_ADJUSTMENT_MODE = 'adaptive'  # How to adjust: 'aggressive_threshold', 'widen_stops', 'skip_cycles', 'adaptive' (all)
+VOLATILITY_ATR_WINDOW = 10  # Number of cycles to average ATR for volatility detection

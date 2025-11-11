@@ -52,6 +52,23 @@ class TradeDatabase:
             )
         ''')
         
+        # Create volatility readings table for market condition tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS volatility_readings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                avg_atr REAL NOT NULL,
+                volatility_state TEXT NOT NULL,
+                confidence REAL,
+                readings_count INTEGER,
+                consecutive_low_cycles INTEGER DEFAULT 0,
+                adjustment_mode TEXT,
+                threshold_adjusted BOOLEAN DEFAULT 0,
+                stops_adjusted BOOLEAN DEFAULT 0,
+                cycle_skipped BOOLEAN DEFAULT 0
+            )
+        ''')
+        
         conn.commit()
         conn.close()
     
@@ -241,6 +258,52 @@ class TradeDatabase:
         conn.close()
         
         return result[0] if result else None
+    
+    def store_volatility_reading(self, volatility_data):
+        """Store a volatility reading for market condition tracking."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO volatility_readings (
+                avg_atr, volatility_state, confidence, readings_count,
+                consecutive_low_cycles, adjustment_mode, threshold_adjusted,
+                stops_adjusted, cycle_skipped
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            volatility_data['avg_atr'],
+            volatility_data['state'],
+            volatility_data.get('confidence', 0.0),
+            volatility_data.get('readings_count', 0),
+            volatility_data.get('consecutive_low_cycles', 0),
+            volatility_data.get('adjustment_mode', 'none'),
+            volatility_data.get('threshold_adjusted', False),
+            volatility_data.get('stops_adjusted', False),
+            volatility_data.get('cycle_skipped', False)
+        ))
+        
+        reading_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        logging.info(f"Volatility reading stored: {volatility_data['state']} "
+                     f"(avg_atr={volatility_data['avg_atr']:.6f})")
+        return reading_id
+    
+    def get_recent_volatility_readings(self, limit=10):
+        """Get recent volatility readings for analysis."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM volatility_readings 
+            ORDER BY timestamp DESC LIMIT ?
+        ''', (limit,))
+        
+        columns = [desc[0] for desc in cursor.description]
+        readings = cursor.fetchall()
+        conn.close()
+        
+        return [dict(zip(columns, reading)) for reading in readings]
     
     def close(self):
         """Close method for compatibility with tests (no-op since we use connection per operation)."""
