@@ -28,7 +28,6 @@ class AdaptiveThresholdManager:
             no_signal_cycles_trigger: Cycles without signals before lowering threshold
             adjustment_step: Amount to adjust threshold by (e.g., 0.02 = 2%)
         """
-        self.current_threshold = base_threshold
         self.base_threshold = base_threshold
         self.min_threshold = min_threshold
         self.max_threshold = max_threshold
@@ -36,12 +35,25 @@ class AdaptiveThresholdManager:
         self.adjustment_step = adjustment_step
         self.db = db
         
+        # Load last threshold from database if available, otherwise use base threshold
+        last_threshold = None
+        if self.db:
+            last_threshold = self.db.get_last_threshold()
+        
+        if last_threshold is not None:
+            # Ensure loaded threshold is within bounds
+            self.current_threshold = max(min_threshold, min(max_threshold, last_threshold))
+            logging.info(f"Adaptive threshold loaded from database: {self.current_threshold:.3f}")
+        else:
+            self.current_threshold = base_threshold
+            logging.info(f"Adaptive threshold initialized with base value: {base_threshold:.3f}")
+        
         # Tracking state
         self.cycles_without_signal = 0
         self.last_adjustment_time = datetime.now()
         
-        logging.info(f"Adaptive threshold initialized: base={base_threshold:.3f}, "
-                     f"range=[{min_threshold:.3f}, {max_threshold:.3f}]")
+        logging.info(f"Adaptive threshold initialized: current={self.current_threshold:.3f}, "
+                     f"base={base_threshold:.3f}, range=[{min_threshold:.3f}, {max_threshold:.3f}]")
     
     def update_on_cycle(self, signals_found):
         """
