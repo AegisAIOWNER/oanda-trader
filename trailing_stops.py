@@ -77,17 +77,24 @@ class TrailingStopManager:
         trailing_move_pips = self.atr_multiplier * atr_pips
         trailing_move_price = trailing_move_pips * pip_size
         
-        # Get current trailing state for this instrument
-        state = self.position_trailing_state.get(instrument, {
-            'highest_price': current_price if direction == 'BUY' else None,
-            'lowest_price': current_price if direction == 'SELL' else None,
-            'last_sl_update': current_sl_price,
-            'total_moves': 0
-        })
+        # Get or initialize trailing state for this instrument
+        is_first_call = instrument not in self.position_trailing_state
+        if is_first_call:
+            # First time seeing this instrument - initialize state
+            self.position_trailing_state[instrument] = {
+                'highest_price': None if direction == 'BUY' else None,
+                'lowest_price': None if direction == 'SELL' else None,
+                'last_sl_update': current_sl_price,
+                'total_moves': 0,
+                'initialized': True
+            }
+        
+        state = self.position_trailing_state[instrument]
         
         if direction == 'BUY':
             # For long positions, move SL up as price increases
             if state['highest_price'] is None or current_price > state['highest_price']:
+                prev_highest = state['highest_price']
                 state['highest_price'] = current_price
                 
                 # Calculate new SL: move up by trailing_move_price from current SL
@@ -111,6 +118,7 @@ class TrailingStopManager:
         else:  # SELL
             # For short positions, move SL down as price decreases
             if state['lowest_price'] is None or current_price < state['lowest_price']:
+                prev_lowest = state['lowest_price']
                 state['lowest_price'] = current_price
                 
                 # Calculate new SL: move down by trailing_move_price from current SL
