@@ -299,6 +299,34 @@ class OandaTradingBot:
         else:
             return 0.0001
     
+    def _calculate_pip_value(self, instrument, price):
+        """Calculate pip value (pip size) for an instrument.
+        
+        The pip value represents the price change per pip per unit of the instrument.
+        This is equivalent to the pip size of the instrument.
+        
+        For position sizing calculations:
+        - Risk = units * stop_loss_pips * pip_value
+        - Units = risk_amount / (stop_loss_pips * pip_value)
+        
+        Args:
+            instrument: Instrument name (e.g., 'EUR_USD', 'GBP_NZD')
+            price: Current price of the instrument (for validation)
+            
+        Returns:
+            float: Pip value per unit (e.g., 0.0001 for EUR_USD, 0.01 for USD_JPY)
+        """
+        if not price or price <= 0:
+            logging.warning(f"Invalid price {price} for {instrument}, using pip size for calculation")
+        
+        # Get pip size for this instrument - this IS the pip value per unit
+        pip_value = self._get_instrument_pip_size(instrument)
+        
+        price_str = f"{price:.5f}" if price and price > 0 else "N/A"
+        logging.debug(f"Calculated pip value for {instrument}: {pip_value} (price={price_str})")
+        
+        return pip_value
+    
     def _get_available_instruments(self):
         """Get list of instruments to scan.
         
@@ -397,7 +425,7 @@ class OandaTradingBot:
         
         return df
 
-    def place_order(self, instrument, side, units, sl_pips=None, tp_pips=None):
+    def place_order(self, instrument, side, units, sl_pips=None, tp_pips=None, current_price=None):
         if not self.check_margin():
             logging.warning(f"Insufficient margin for {instrument}, skipping.")
             if self.performance_monitor:
@@ -431,9 +459,27 @@ class OandaTradingBot:
                     )
                 return None
         
-        # Check risk limits
+        # Check risk limits - calculate pip value based on instrument and price
         balance = self.get_balance()
-        risk_amount = abs(units * sl_pips * 10) if sl_pips else 0  # Simplified risk calculation
+        
+        # Get current price if not provided
+        if current_price is None:
+            try:
+                df = self.get_prices(instrument, count=1, granularity=GRANULARITY)
+                if not df.empty:
+                    current_price = df['close'].iloc[-1]
+                else:
+                    current_price = 1.0  # Fallback
+            except Exception as e:
+                logging.warning(f"Failed to get current price for {instrument}: {e}, using fallback")
+                current_price = 1.0
+        
+        # Calculate pip value for this instrument
+        pip_value = self._calculate_pip_value(instrument, current_price)
+        
+        # Calculate risk amount using proper pip value
+        # Formula: risk = units * stop_loss_pips * pip_value_per_unit
+        risk_amount = abs(units * sl_pips * pip_value) if sl_pips else 0
         
         can_open, reason = self.risk_manager.can_open_position(instrument, units, risk_amount, balance)
         if not can_open:
@@ -852,21 +898,27 @@ class OandaTradingBot:
             # Calculate ATR-based stops (returns pips) with adjusted multipliers
             sl, tp = self.calculate_atr_stops(atr, signal, instrument, stop_multiplier, profit_multiplier)
             
+            # Get current price for pip value calculation
+            current_price = best_signal['df']['close'].iloc[-1]
+            
+            # Calculate pip value for this instrument
+            pip_value = self._calculate_pip_value(instrument, current_price)
+            
             # Calculate optimal position size
             performance_metrics = self.db.get_performance_metrics(days=30)
             units, risk_pct = self.position_sizer.calculate_position_size(
                 balance=current_balance,
                 stop_loss_pips=sl,
-                pip_value=10,
+                pip_value=pip_value,
                 performance_metrics=performance_metrics,
                 confidence=confidence
             )
             
             logging.info(f"Placing order for {instrument}: {signal} with SL={sl:.4f}, TP={tp:.4f}, \
-                        units={units}, risk={risk_pct*100:.2f}%")
+                        units={units}, risk={risk_pct*100:.2f}%, pip_value={pip_value:.4f}")
             
-            # Place order
-            response = self.place_order(instrument, signal, units, sl, tp)
+            # Place order with current price for risk calculation
+            response = self.place_order(instrument, signal, units, sl, tp, current_price)
             
             # Store trade in database
             if response:
