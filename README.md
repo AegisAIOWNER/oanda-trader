@@ -37,7 +37,7 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 - **Signal Filtering**: Rejects signals contradicting higher timeframe trend
 - **Confidence Boosting**: Strong confirmations increase confidence by 15%
 
-### Autonomous Adaptive Threshold (NEW!)
+### Autonomous Adaptive Threshold
 - **AI-Like Self-Optimization**: Dynamically adjusts confidence threshold based on performance
 - **Signal Frequency Adaptation**: Lowers threshold after multiple cycles without signals
 - **Performance-Based Tuning**: Adjusts based on win rate and profit factor
@@ -47,6 +47,19 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 - **Decision Logging**: Stores all adjustments with reasoning in database for learning
 - **Safety Bounds**: Configurable min/max thresholds prevent extreme adjustments
 - **Transparent Reasoning**: Every adjustment logged with clear explanation
+
+### Market Volatility Detection (NEW!)
+- **Automatic Volatility Monitoring**: Calculates average ATR across all scanned pairs
+- **Three-State Classification**: LOW, NORMAL, or HIGH volatility detection
+- **Conditional Strategy Adjustments**: Adapts trading behavior based on market conditions
+  - **Aggressive Threshold Mode**: Lowers confidence threshold more aggressively in low volatility
+  - **Widen Stops Mode**: Increases stop-loss and take-profit ratios (1.5x-2x) to avoid whipsaws
+  - **Skip Cycles Mode**: Optionally skips trading during prolonged low volatility periods
+  - **Adaptive Mode** (Recommended): Combines all adjustment methods intelligently
+- **Enhanced Adaptive Threshold**: Increases adjustment speed by 2x-3x in low volatility
+- **Database Tracking**: Stores all volatility readings with adjustment decisions
+- **Confidence Scoring**: Consistency-based confidence in volatility state detection
+- **Configurable Thresholds**: Customize low/normal volatility boundaries for your pairs
 
 ### Advanced Backtesting
 - **Walk-Forward Testing**: Robust validation with train/test periods
@@ -71,7 +84,7 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 - **Daily Loss Limits**: Stops trading if daily loss exceeds 6%
 - **Multiple Instruments**: Supports 8+ currency pairs
 - **CLI Interface**: Easy command-line control with rich options
-- **Comprehensive Testing**: 31 unit tests covering core functionality
+- **Comprehensive Testing**: 56 unit tests covering core functionality including volatility detection
 
 ## Strategies
 
@@ -125,6 +138,13 @@ ADAPTIVE_MIN_THRESHOLD = 0.5  # Minimum allowed threshold
 ADAPTIVE_MAX_THRESHOLD = 0.95  # Maximum allowed threshold
 ADAPTIVE_NO_SIGNAL_CYCLES = 5  # Cycles without signals before lowering
 ADAPTIVE_ADJUSTMENT_STEP = 0.02  # Adjustment step size (2%)
+
+# Volatility Detection (adaptive strategy adjustments)
+ENABLE_VOLATILITY_DETECTION = True  # Enable market volatility detection
+VOLATILITY_LOW_THRESHOLD = 0.0005  # ATR threshold for low volatility (5 pips)
+VOLATILITY_NORMAL_THRESHOLD = 0.0015  # ATR threshold for normal/high volatility (15 pips)
+VOLATILITY_ADJUSTMENT_MODE = 'adaptive'  # 'aggressive_threshold', 'widen_stops', 'skip_cycles', or 'adaptive' (all)
+VOLATILITY_ATR_WINDOW = 10  # Number of cycles to average ATR for detection
 ```
 
 ## Usage
@@ -142,7 +162,10 @@ python cli.py start
 python cli.py start --enable-ml
 
 # Start with all features enabled (recommended)
-python cli.py start --enable-ml --enable-multiframe --enable-adaptive-threshold
+python cli.py start --enable-ml --enable-multiframe --enable-adaptive-threshold --enable-volatility-detection
+
+# Disable volatility detection if you prefer fixed behavior
+python cli.py start --no-volatility-detection
 
 # Use Kelly Criterion for position sizing (requires trade history)
 python cli.py start --position-sizing kelly_criterion
@@ -217,12 +240,19 @@ ENABLE_MULTIFRAME = True
 PRIMARY_TIMEFRAME = 'M5'
 CONFIRMATION_TIMEFRAME = 'H1'
 
-# Adaptive Threshold (NEW!)
+# Adaptive Threshold
 ENABLE_ADAPTIVE_THRESHOLD = True
 ADAPTIVE_MIN_THRESHOLD = 0.5
 ADAPTIVE_MAX_THRESHOLD = 0.95
 ADAPTIVE_NO_SIGNAL_CYCLES = 5
 ADAPTIVE_ADJUSTMENT_STEP = 0.02
+
+# Volatility Detection (NEW!)
+ENABLE_VOLATILITY_DETECTION = True
+VOLATILITY_LOW_THRESHOLD = 0.0005
+VOLATILITY_NORMAL_THRESHOLD = 0.0015
+VOLATILITY_ADJUSTMENT_MODE = 'adaptive'
+VOLATILITY_ATR_WINDOW = 10
 
 # Strategy
 STRATEGY = 'advanced_scalp'
@@ -232,16 +262,21 @@ CONFIDENCE_THRESHOLD = 0.8  # Base threshold (adaptive when enabled)
 ## How It Works
 
 1. **Pair Scanning**: Bot scans configured instruments for signals
-2. **Signal Evaluation**: Each pair is evaluated using the selected strategy
-3. **Confidence Filtering**: Only signals above the confidence threshold are considered (threshold is dynamic if adaptive mode enabled)
-4. **Best Signal Selection**: The pair with the highest confidence is selected
-5. **Adaptive Risk Calculation**: ATR-based stops and targets are calculated
-6. **Order Placement**: A single order is placed for the best signal
-7. **Safety Checks**: Margin and daily loss limits are verified
-8. **Adaptive Learning** (if enabled): 
+2. **Volatility Detection** (if enabled): Calculates average ATR across all scanned pairs to determine market volatility state
+3. **Signal Evaluation**: Each pair is evaluated using the selected strategy
+4. **Confidence Filtering**: Only signals above the confidence threshold are considered (threshold is dynamic if adaptive mode enabled)
+5. **Best Signal Selection**: The pair with the highest confidence is selected
+6. **Volatility-Adjusted Risk Calculation**: ATR-based stops and targets are calculated, with adjustments based on volatility state:
+   - **Low Volatility**: Widens stops/targets by 1.5x-2x to avoid whipsaws, lowers threshold more aggressively
+   - **Normal/High Volatility**: Uses standard multipliers
+7. **Order Placement**: A single order is placed for the best signal
+8. **Safety Checks**: Margin and daily loss limits are verified
+9. **Adaptive Learning** (if enabled): 
    - Threshold automatically adjusts after each cycle based on signal frequency
+   - Adjustment speed increases 2x-3x in low volatility conditions
    - Threshold adjusts after trades based on recent win rate and profit factor
    - All adjustments are logged with reasoning in the database for transparency
+10. **Volatility Tracking**: All volatility readings and adjustments are stored for analysis
 
 ## Security
 

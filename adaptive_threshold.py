@@ -16,7 +16,8 @@ class AdaptiveThresholdManager:
     
     def __init__(self, base_threshold=0.8, db=None, 
                  min_threshold=0.5, max_threshold=0.95,
-                 no_signal_cycles_trigger=5, adjustment_step=0.02):
+                 no_signal_cycles_trigger=5, adjustment_step=0.02,
+                 volatility_detector=None):
         """
         Initialize adaptive threshold manager.
         
@@ -27,6 +28,7 @@ class AdaptiveThresholdManager:
             max_threshold: Maximum allowed threshold (safety ceiling)
             no_signal_cycles_trigger: Cycles without signals before lowering threshold
             adjustment_step: Amount to adjust threshold by (e.g., 0.02 = 2%)
+            volatility_detector: Optional VolatilityDetector instance for volatility-aware adjustments
         """
         self.base_threshold = base_threshold
         self.min_threshold = min_threshold
@@ -34,6 +36,7 @@ class AdaptiveThresholdManager:
         self.no_signal_cycles_trigger = no_signal_cycles_trigger
         self.adjustment_step = adjustment_step
         self.db = db
+        self.volatility_detector = volatility_detector
         
         # Load last threshold from database if available, otherwise use base threshold
         last_threshold = None
@@ -82,8 +85,19 @@ class AdaptiveThresholdManager:
     def _lower_threshold_for_signal_frequency(self):
         """Lower threshold due to lack of signals."""
         old_threshold = self.current_threshold
+        
+        # Get volatility-adjusted step if volatility detector is available
+        adjustment_step = self.adjustment_step
+        if self.volatility_detector:
+            vol_adjustment = self.volatility_detector.get_threshold_adjustment(
+                self.current_threshold, self.adjustment_step
+            )
+            adjustment_step = vol_adjustment['adjusted_step']
+            logging.info(f"🌡️ VOLATILITY-AWARE ADJUSTMENT: Using step={adjustment_step:.4f} "
+                        f"(base={self.adjustment_step:.4f})")
+        
         new_threshold = max(self.min_threshold, 
-                           self.current_threshold - self.adjustment_step)
+                           self.current_threshold - adjustment_step)
         
         if new_threshold < old_threshold:
             self.current_threshold = new_threshold
@@ -91,6 +105,13 @@ class AdaptiveThresholdManager:
             
             reason = (f"Lowered threshold after {self.no_signal_cycles_trigger} cycles "
                      f"without signals to increase signal frequency")
+            
+            # Add volatility context if available
+            if self.volatility_detector:
+                vol_state = self.volatility_detector.current_volatility_state
+                avg_atr = self.volatility_detector.current_avg_atr
+                reason += (f" [Volatility: {vol_state}, avg_atr={avg_atr:.6f}, "
+                          f"adjustment_step={adjustment_step:.4f}]")
             
             self._log_adjustment(old_threshold, new_threshold, reason,
                                cycles_without_signal=self.no_signal_cycles_trigger)
