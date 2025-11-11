@@ -157,7 +157,7 @@ Key settings in `config.py`:
 
 ```python
 STRATEGY = 'advanced_scalp'  # Strategy to use
-MAX_PAIRS_TO_SCAN = 10  # Maximum pairs to scan per cycle
+MAX_PAIRS_TO_SCAN = 25  # Maximum pairs to scan per cycle
 CONFIDENCE_THRESHOLD = 0.8  # Base confidence for trades (can be adaptive)
 INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', ...]
 
