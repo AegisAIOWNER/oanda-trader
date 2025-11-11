@@ -84,6 +84,139 @@ class TestStrategies(unittest.TestCase):
         self.assertGreaterEqual(atr, 0.0)
 
 
+class TestATRStopsCalculation(unittest.TestCase):
+    """Test ATR-based stop loss and take profit calculation."""
+    
+    def setUp(self):
+        """Set up a mock bot for testing."""
+        # We need to mock the bot to avoid API calls
+        # Import here to avoid circular import issues
+        from unittest.mock import MagicMock, patch
+        from bot import OandaTradingBot
+        
+        # Mock the API and database to avoid actual connections
+        with patch('bot.oandapyV20.API'), \
+             patch('bot.TradeDatabase'), \
+             patch('bot.MLPredictor'), \
+             patch('bot.PositionSizer'), \
+             patch('bot.MultiTimeframeAnalyzer'), \
+             patch('bot.AdaptiveThresholdManager'), \
+             patch.object(OandaTradingBot, 'get_balance', return_value=10000.0):
+            self.bot = OandaTradingBot(
+                enable_ml=False, 
+                enable_multiframe=False,
+                enable_adaptive_threshold=False
+            )
+    
+    def test_calculate_atr_stops_eur_usd(self):
+        """Test ATR stops calculation for EUR_USD (standard pair)."""
+        atr = 0.0002  # ATR in price units
+        signal = 'BUY'
+        instrument = 'EUR_USD'
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
+        
+        # With ATR_STOP_MULTIPLIER = 1.5 and ATR_PROFIT_MULTIPLIER = 2.5
+        # sl_price = 0.0002 * 1.5 = 0.0003
+        # tp_price = 0.0002 * 2.5 = 0.0005
+        # For EUR_USD, pip_size = 0.0001
+        # sl_pips = 0.0003 / 0.0001 = 3.0
+        # tp_pips = 0.0005 / 0.0001 = 5.0
+        
+        self.assertAlmostEqual(sl_pips, 3.0, places=5)
+        self.assertAlmostEqual(tp_pips, 5.0, places=5)
+    
+    def test_calculate_atr_stops_usd_jpy(self):
+        """Test ATR stops calculation for USD_JPY (JPY pair)."""
+        atr = 0.15  # ATR in price units (JPY pairs have different scale)
+        signal = 'SELL'
+        instrument = 'USD_JPY'
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
+        
+        # With ATR_STOP_MULTIPLIER = 1.5 and ATR_PROFIT_MULTIPLIER = 2.5
+        # sl_price = 0.15 * 1.5 = 0.225
+        # tp_price = 0.15 * 2.5 = 0.375
+        # For USD_JPY, pip_size = 0.01
+        # sl_pips = 0.225 / 0.01 = 22.5
+        # tp_pips = 0.375 / 0.01 = 37.5
+        
+        self.assertAlmostEqual(sl_pips, 22.5, places=5)
+        self.assertAlmostEqual(tp_pips, 37.5, places=5)
+    
+    def test_calculate_atr_stops_gbp_usd(self):
+        """Test ATR stops calculation for GBP_USD (standard pair)."""
+        atr = 0.0004
+        signal = 'BUY'
+        instrument = 'GBP_USD'
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
+        
+        # sl_price = 0.0004 * 1.5 = 0.0006
+        # tp_price = 0.0004 * 2.5 = 0.0010
+        # For GBP_USD, pip_size = 0.0001
+        # sl_pips = 0.0006 / 0.0001 = 6.0
+        # tp_pips = 0.0010 / 0.0001 = 10.0
+        
+        self.assertAlmostEqual(sl_pips, 6.0, places=5)
+        self.assertAlmostEqual(tp_pips, 10.0, places=5)
+    
+    def test_calculate_atr_stops_zero_atr(self):
+        """Test fallback to config defaults when ATR is zero."""
+        from config import STOP_LOSS_PIPS, TAKE_PROFIT_PIPS
+        
+        atr = 0.0
+        signal = 'BUY'
+        instrument = 'EUR_USD'
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
+        
+        # Should return config defaults
+        self.assertEqual(sl_pips, STOP_LOSS_PIPS)
+        self.assertEqual(tp_pips, TAKE_PROFIT_PIPS)
+    
+    def test_calculate_atr_stops_eur_jpy(self):
+        """Test ATR stops calculation for EUR_JPY (JPY pair)."""
+        atr = 0.12
+        signal = 'BUY'
+        instrument = 'EUR_JPY'
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
+        
+        # sl_price = 0.12 * 1.5 = 0.18
+        # tp_price = 0.12 * 2.5 = 0.30
+        # For EUR_JPY, pip_size = 0.01 (contains JPY)
+        # sl_pips = 0.18 / 0.01 = 18.0
+        # tp_pips = 0.30 / 0.01 = 30.0
+        
+        self.assertAlmostEqual(sl_pips, 18.0, places=5)
+        self.assertAlmostEqual(tp_pips, 30.0, places=5)
+    
+    def test_pip_size_detection_various_instruments(self):
+        """Test pip size detection for various instruments."""
+        # Standard pairs (0.0001 pip size)
+        standard_pairs = ['EUR_USD', 'GBP_USD', 'USD_CAD', 'AUD_USD', 'NZD_USD', 'EUR_GBP', 'USD_CHF']
+        atr = 0.0001
+        
+        for instrument in standard_pairs:
+            sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, 'BUY', instrument)
+            # sl_price = 0.0001 * 1.5 = 0.00015
+            # sl_pips = 0.00015 / 0.0001 = 1.5
+            self.assertAlmostEqual(sl_pips, 1.5, places=5, 
+                                 msg=f"Failed for {instrument}")
+        
+        # JPY pairs (0.01 pip size)
+        jpy_pairs = ['USD_JPY', 'EUR_JPY', 'GBP_JPY', 'AUD_JPY']
+        atr = 0.01
+        
+        for instrument in jpy_pairs:
+            sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, 'BUY', instrument)
+            # sl_price = 0.01 * 1.5 = 0.015
+            # sl_pips = 0.015 / 0.01 = 1.5
+            self.assertAlmostEqual(sl_pips, 1.5, places=5,
+                                 msg=f"Failed for {instrument}")
+
+
 class TestPositionSizing(unittest.TestCase):
     """Test position sizing calculations."""
     

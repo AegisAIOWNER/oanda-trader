@@ -240,14 +240,35 @@ class OandaTradingBot:
         logging.info(f"Best signal: {best['instrument']} {best['signal']} (confidence: {best['confidence']:.2f})")
         return best
     
-    def calculate_atr_stops(self, atr, signal):
-        """Calculate ATR-based stop loss and take profit."""
-        if atr > 0:
-            sl = atr * ATR_STOP_MULTIPLIER
-            tp = atr * ATR_PROFIT_MULTIPLIER
-            return sl, tp
+    def calculate_atr_stops(self, atr, signal, instrument):
+        """Calculate ATR-based stop loss and take profit in pips.
+        
+        Args:
+            atr: ATR value in price units
+            signal: Trading signal ('BUY' or 'SELL')
+            instrument: Trading instrument (e.g., 'EUR_USD', 'USD_JPY')
+            
+        Returns:
+            tuple: (stop_loss_pips, take_profit_pips)
+        """
+        # Determine pip size based on instrument
+        if 'JPY' in instrument:
+            pip_size = 0.01  # Japanese Yen pairs use 2 decimal places
         else:
-            # Fallback to config defaults
+            pip_size = 0.0001  # Most pairs use 4 decimal places
+        
+        if atr > 0:
+            # Calculate price distances
+            sl_price = atr * ATR_STOP_MULTIPLIER
+            tp_price = atr * ATR_PROFIT_MULTIPLIER
+            
+            # Convert price distances to pips
+            sl_pips = sl_price / pip_size
+            tp_pips = tp_price / pip_size
+            
+            return sl_pips, tp_pips
+        else:
+            # Fallback to config defaults (already in pips)
             return STOP_LOSS_PIPS, TAKE_PROFIT_PIPS
 
     def run_cycle(self):
@@ -287,8 +308,8 @@ class OandaTradingBot:
             confidence = best_signal['confidence']
             ml_prediction = best_signal.get('ml_prediction', 0.5)
             
-            # Calculate ATR-based stops
-            sl, tp = self.calculate_atr_stops(atr, signal)
+            # Calculate ATR-based stops (returns pips)
+            sl, tp = self.calculate_atr_stops(atr, signal, instrument)
             
             # Calculate optimal position size
             performance_metrics = self.db.get_performance_metrics(days=30)
