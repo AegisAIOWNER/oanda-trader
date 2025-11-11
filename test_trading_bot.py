@@ -844,6 +844,41 @@ class TestDynamicInstruments(unittest.TestCase):
         self.assertEqual(eur_usd_meta['pipLocation'], -4)
         self.assertEqual(eur_usd_meta['displayPrecision'], 5)
         self.assertEqual(eur_usd_meta['minimumTradeSize'], '1')
+    
+    def test_on_demand_instrument_fetching(self):
+        """Test that instruments are fetched on-demand when not in cache."""
+        from unittest.mock import patch
+        
+        # Add GBP_JPY to the mock response (simulating it being available in API)
+        extended_response = {
+            'instruments': self.mock_instruments_response['instruments'] + [
+                {
+                    'name': 'GBP_JPY',
+                    'displayName': 'GBP/JPY',
+                    'type': 'CURRENCY',
+                    'pipLocation': -2,
+                    'displayPrecision': 3,
+                    'tradeUnitsPrecision': 0,
+                    'minimumTradeSize': '1',
+                    'maximumOrderUnits': '100000000'
+                }
+            ]
+        }
+        
+        # Ensure GBP_JPY is not in cache initially
+        if 'GBP_JPY' in self.bot.instruments_cache:
+            del self.bot.instruments_cache['GBP_JPY']
+        
+        # Mock the rate_limited_request to return extended response
+        with patch.object(self.bot, '_rate_limited_request', return_value=extended_response):
+            pip_size = self.bot._get_instrument_pip_size('GBP_JPY')
+        
+        # Should fetch from API and get correct pip size
+        self.assertEqual(pip_size, 0.01)
+        
+        # Should now be cached
+        self.assertIn('GBP_JPY', self.bot.instruments_cache)
+        self.assertEqual(self.bot.instruments_cache['GBP_JPY']['pipLocation'], -2)
 
 
 if __name__ == '__main__':
