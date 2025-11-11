@@ -38,10 +38,7 @@ class OandaTradingBot:
         
         # Exponential backoff for API calls (initialize before any API calls)
         self.api_backoff = ExponentialBackoff(base_delay=1.0, max_delay=30.0, max_retries=5)
-        print("DEBUG: Exponential backoff initialized, attempting to get balance...", flush=True)
-        
-        self.daily_start_balance = self.get_balance()
-        print(f"DEBUG: Balance retrieved: {self.daily_start_balance}", flush=True)
+        print("DEBUG: Exponential backoff initialized", flush=True)
         
         # Initialize database
         print("DEBUG: Initializing database...", flush=True)
@@ -138,6 +135,11 @@ class OandaTradingBot:
         self.last_health_check = None
         print("DEBUG: Monitoring and logging initialized", flush=True)
         
+        # Initialize daily start balance after all components are ready
+        print("DEBUG: Attempting to get balance...", flush=True)
+        self.daily_start_balance = self.get_balance()
+        print(f"DEBUG: Balance retrieved: {self.daily_start_balance}", flush=True)
+        
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
                      f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}, "
@@ -175,7 +177,7 @@ class OandaTradingBot:
             success = True
             
             # Validate API response
-            if VALIDATE_ORDER_PARAMS:
+            if VALIDATE_ORDER_PARAMS and hasattr(self, 'data_validator'):
                 is_valid, error_msg = self.data_validator.validate_api_response(result)
                 if not is_valid:
                     logging.warning(f"API response validation warning: {error_msg}")
@@ -185,14 +187,14 @@ class OandaTradingBot:
         except Exception as e:
             success = False
             error = e
-            if self.structured_logger:
+            if hasattr(self, 'structured_logger') and self.structured_logger:
                 self.structured_logger.log_api_error(str(endpoint.__class__.__name__), e)
             raise
         
         finally:
             # Record API call metrics
             duration = time.time() - start_time
-            if self.performance_monitor:
+            if hasattr(self, 'performance_monitor') and self.performance_monitor:
                 self.performance_monitor.record_api_call(success, duration, error)
 
     def _fetch_and_cache_instruments(self):
