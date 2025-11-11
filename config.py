@@ -65,3 +65,43 @@ VOLATILITY_ATR_WINDOW = 10  # Number of cycles to average ATR for volatility det
 # Dynamic Instrument Selection settings
 ENABLE_DYNAMIC_INSTRUMENTS = True  # Enable dynamic instrument selection from all available instruments
 DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before refreshing
+
+# Enhanced Risk Management settings (future-proofing)
+MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions
+MAX_RISK_PER_TRADE = 0.02  # Maximum risk per trade (2% of balance)
+MAX_TOTAL_RISK = 0.10  # Maximum total risk across all positions (10% of balance)
+MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments (same base currency)
+MAX_UNITS_PER_INSTRUMENT = 100000  # Maximum units per instrument
+MAX_SLIPPAGE_PIPS = 2.0  # Maximum acceptable slippage in pips
+
+# Input Validation settings
+MIN_CANDLES_REQUIRED = 30  # Minimum candles required for strategy calculations
+VALIDATE_CANDLE_DATA = True  # Enable comprehensive candle data validation
+VALIDATE_ORDER_PARAMS = True  # Enable order parameter validation
+
+# Market Hours settings
+CHECK_MARKET_HOURS = True  # Check if market is open before trading
+SKIP_WEEKEND_TRADING = True  # Skip trading on weekends
+
+# Gap Detection settings
+DETECT_PRICE_GAPS = True  # Detect significant price gaps
+PRICE_GAP_THRESHOLD_PCT = 2.0  # Price gap threshold percentage
+SKIP_TRADING_ON_GAPS = True  # Skip trading when large gaps detected
+
+# Partial Fill Handling
+PARTIAL_FILL_STRATEGY = 'ACCEPT'  # How to handle partial fills: 'ACCEPT', 'RETRY', 'CANCEL'
+MIN_PARTIAL_FILL_PCT = 50  # Minimum acceptable partial fill percentage
+
+# API Error Handling
+API_RETRY_ON_DEPRECATION = True  # Retry with fallback on deprecated endpoints
+API_VERSION_CHECK = True  # Check API version compatibility
+MAX_API_RETRIES = 5  # Maximum retries for API calls
+
+# Health Monitoring
+ENABLE_HEALTH_CHECKS = True  # Enable health monitoring
+HEALTH_CHECK_INTERVAL = 3600  # Health check interval in seconds (1 hour)
+MIN_BALANCE_THRESHOLD = 100  # Minimum balance to continue trading
+
+# Logging
+ENABLE_STRUCTURED_LOGGING = True  # Enable structured logging with context
+LOG_LEVEL = 'INFO'  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL

@@ -18,6 +18,9 @@ from multi_timeframe import MultiTimeframeAnalyzer
 from error_recovery import ExponentialBackoff, api_circuit_breaker
 from adaptive_threshold import AdaptiveThresholdManager
 from volatility_detector import VolatilityDetector
+from validation import DataValidator, RiskValidator
+from risk_manager import RiskManager, OrderResponseHandler
+from monitoring import StructuredLogger, PerformanceMonitor, HealthChecker
 print("DEBUG: All imports completed successfully", flush=True)
 
 class OandaTradingBot:
@@ -99,11 +102,48 @@ class OandaTradingBot:
             self._fetch_and_cache_instruments()
             print(f"DEBUG: Cached {len(self.instruments_cache)} instruments", flush=True)
         
+        # Initialize validation and risk management (future-proofing)
+        print("DEBUG: Initializing validation and risk management...", flush=True)
+        self.data_validator = DataValidator()
+        self.risk_validator = RiskValidator(
+            max_open_positions=MAX_OPEN_POSITIONS,
+            max_risk_per_trade=MAX_RISK_PER_TRADE,
+            max_total_risk=MAX_TOTAL_RISK,
+            max_slippage_pips=MAX_SLIPPAGE_PIPS
+        )
+        self.risk_manager = RiskManager(
+            max_open_positions=MAX_OPEN_POSITIONS,
+            max_risk_per_trade=MAX_RISK_PER_TRADE,
+            max_total_risk=MAX_TOTAL_RISK,
+            max_correlation_positions=MAX_CORRELATION_POSITIONS,
+            max_units_per_instrument=MAX_UNITS_PER_INSTRUMENT
+        )
+        self.order_response_handler = OrderResponseHandler()
+        print("DEBUG: Validation and risk management initialized", flush=True)
+        
+        # Initialize monitoring and logging
+        print("DEBUG: Initializing monitoring and logging...", flush=True)
+        log_level_map = {
+            'DEBUG': logging.DEBUG,
+            'INFO': logging.INFO,
+            'WARNING': logging.WARNING,
+            'ERROR': logging.ERROR,
+            'CRITICAL': logging.CRITICAL
+        }
+        self.structured_logger = StructuredLogger(
+            name='TradingBot',
+            log_level=log_level_map.get(LOG_LEVEL, logging.INFO)
+        ) if ENABLE_STRUCTURED_LOGGING else None
+        self.performance_monitor = PerformanceMonitor() if ENABLE_HEALTH_CHECKS else None
+        self.last_health_check = None
+        print("DEBUG: Monitoring and logging initialized", flush=True)
+        
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         logging.info(f"Bot initialized - ML: {enable_ml}, Multi-timeframe: {enable_multiframe}, "
                      f"Position sizing: {position_sizing_method}, Adaptive threshold: {enable_adaptive_threshold}, "
                      f"Volatility detection: {enable_volatility_detection}, "
-                     f"Dynamic instruments: {ENABLE_DYNAMIC_INSTRUMENTS}")
+                     f"Dynamic instruments: {ENABLE_DYNAMIC_INSTRUMENTS}, "
+                     f"Risk management: enabled, Health monitoring: {ENABLE_HEALTH_CHECKS}")
         print("DEBUG: OandaTradingBot.__init__ completed successfully", flush=True)
 
     def _rate_limited_request(self, endpoint):
@@ -113,6 +153,11 @@ class OandaTradingBot:
         if elapsed < RATE_LIMIT_DELAY:
             time.sleep(RATE_LIMIT_DELAY - elapsed)
         self.last_request_time = current_time
+        
+        start_time = time.time()
+        success = False
+        error = None
+        result = None
         
         def _execute_request():
             try:
@@ -124,8 +169,31 @@ class OandaTradingBot:
                     raise  # Let exponential backoff handle retry
                 raise
         
-        # Execute with exponential backoff
-        return self.api_backoff.execute_with_retry(_execute_request)
+        try:
+            # Execute with exponential backoff
+            result = self.api_backoff.execute_with_retry(_execute_request)
+            success = True
+            
+            # Validate API response
+            if VALIDATE_ORDER_PARAMS:
+                is_valid, error_msg = self.data_validator.validate_api_response(result)
+                if not is_valid:
+                    logging.warning(f"API response validation warning: {error_msg}")
+            
+            return result
+        
+        except Exception as e:
+            success = False
+            error = e
+            if self.structured_logger:
+                self.structured_logger.log_api_error(str(endpoint.__class__.__name__), e)
+            raise
+        
+        finally:
+            # Record API call metrics
+            duration = time.time() - start_time
+            if self.performance_monitor:
+                self.performance_monitor.record_api_call(success, duration, error)
 
     def _fetch_and_cache_instruments(self):
         """Fetch all tradable instruments from Oanda API and cache their metadata."""
@@ -275,12 +343,72 @@ class OandaTradingBot:
                     'close': float(c['mid']['c']),
                     'volume': int(c['volume'])
                 })
-        return pd.DataFrame(data)
+        
+        df = pd.DataFrame(data)
+        
+        # Validate candle data if enabled
+        if VALIDATE_CANDLE_DATA and not df.empty:
+            is_valid, error_msg = self.data_validator.validate_candle_data(
+                df, instrument, min_candles=MIN_CANDLES_REQUIRED
+            )
+            if not is_valid:
+                logging.error(f"Candle data validation failed for {instrument}: {error_msg}")
+                if self.structured_logger:
+                    self.structured_logger.log_validation_error(
+                        "candle_data", error_msg, instrument=instrument
+                    )
+                # Return empty DataFrame to signal failure
+                return pd.DataFrame()
+        
+        return df
 
     def place_order(self, instrument, side, units, sl_pips=None, tp_pips=None):
         if not self.check_margin():
             logging.warning(f"Insufficient margin for {instrument}, skipping.")
-            return
+            if self.performance_monitor:
+                self.performance_monitor.record_trade_attempt(False, "Insufficient margin")
+            return None
+        
+        # Validate order parameters
+        if VALIDATE_ORDER_PARAMS:
+            is_valid, error_msg = self.data_validator.validate_order_params(
+                instrument, units, sl_pips, tp_pips,
+                max_units=MAX_UNITS_PER_INSTRUMENT
+            )
+            if not is_valid:
+                logging.error(f"Order validation failed for {instrument}: {error_msg}")
+                if self.structured_logger:
+                    self.structured_logger.log_validation_error(
+                        "order_params", error_msg, instrument=instrument
+                    )
+                if self.performance_monitor:
+                    self.performance_monitor.record_trade_attempt(False, f"Validation failed: {error_msg}")
+                return None
+        
+        # Check market hours
+        if CHECK_MARKET_HOURS and SKIP_WEEKEND_TRADING:
+            is_closed, reason = self.data_validator.is_market_closed()
+            if is_closed:
+                logging.info(f"Market closed, skipping order for {instrument}: {reason}")
+                if self.structured_logger:
+                    self.structured_logger.log_trade_decision(
+                        instrument, side, 0.0, "SKIPPED", reason
+                    )
+                return None
+        
+        # Check risk limits
+        balance = self.get_balance()
+        risk_amount = abs(units * sl_pips * 10) if sl_pips else 0  # Simplified risk calculation
+        
+        can_open, reason = self.risk_manager.can_open_position(instrument, units, risk_amount, balance)
+        if not can_open:
+            logging.warning(f"Risk check failed for {instrument}: {reason}")
+            if self.structured_logger:
+                self.structured_logger.log_risk_check("position_limit", False, reason, instrument=instrument)
+            if self.performance_monitor:
+                self.performance_monitor.record_trade_attempt(False, f"Risk check failed: {reason}")
+            return None
+        
         data = {
             'order': {
                 'instrument': instrument,
@@ -293,10 +421,45 @@ class OandaTradingBot:
             data['order']['stopLossOnFill'] = {'distance': str(sl_pips)}
         if tp_pips:
             data['order']['takeProfitOnFill'] = {'distance': str(tp_pips)}
-        r = orders.OrderCreate(accountID=self.account_id, data=data)
-        response = self._rate_limited_request(r)
-        logging.info(f"Order placed for {instrument}: {response}")
-        return response
+        
+        try:
+            r = orders.OrderCreate(accountID=self.account_id, data=data)
+            response = self._rate_limited_request(r)
+            
+            # Parse order response
+            order_info = self.order_response_handler.parse_order_response(response)
+            
+            # Handle partial fills
+            if order_info['fill_status'] == 'PARTIAL_FILL':
+                action = self.order_response_handler.handle_partial_fill(
+                    order_info, abs(units), strategy=PARTIAL_FILL_STRATEGY
+                )
+                logging.warning(f"Partial fill for {instrument}: {action['reason']}")
+                if self.structured_logger:
+                    self.structured_logger.log_order_result(
+                        instrument, 'MARKET', 'PARTIAL_FILL',
+                        action=action['action'],
+                        filled_pct=f"{order_info['filled_units']/abs(units)*100:.1f}%"
+                    )
+            
+            # Register position if successful
+            if order_info['success'] and order_info['fill_status'] in ['FULL_FILL', 'PARTIAL_FILL']:
+                self.risk_manager.register_position(instrument, order_info.get('filled_units', units), risk_amount)
+                if self.performance_monitor:
+                    self.performance_monitor.record_trade_attempt(True, None)
+                logging.info(f"Order placed for {instrument}: {order_info['fill_status']}")
+            else:
+                if self.performance_monitor:
+                    self.performance_monitor.record_trade_attempt(False, order_info.get('error', 'Unknown error'))
+                logging.error(f"Order failed for {instrument}: {order_info.get('error', 'Unknown error')}")
+            
+            return response
+        
+        except Exception as e:
+            logging.error(f"Exception placing order for {instrument}: {e}")
+            if self.performance_monitor:
+                self.performance_monitor.record_trade_attempt(False, f"Exception: {str(e)}")
+            return None
 
     def scan_pairs_for_signals(self):
         """Scan all configured pairs and return signals with confidence scores."""
@@ -454,6 +617,17 @@ class OandaTradingBot:
         Returns:
             tuple: (stop_loss_pips, take_profit_pips)
         """
+        # Validate ATR value
+        is_valid, error_msg, sanitized_atr = self.data_validator.validate_atr(atr, instrument)
+        if not is_valid:
+            logging.warning(f"ATR validation failed for {instrument}: {error_msg}, using fallback")
+            if self.structured_logger:
+                self.structured_logger.log_validation_error("atr", error_msg, instrument=instrument)
+            return STOP_LOSS_PIPS, TAKE_PROFIT_PIPS
+        
+        # Use sanitized ATR value
+        atr = sanitized_atr
+        
         # Use provided multipliers or fall back to config defaults
         stop_mult = stop_multiplier if stop_multiplier is not None else ATR_STOP_MULTIPLIER
         profit_mult = profit_multiplier if profit_multiplier is not None else ATR_PROFIT_MULTIPLIER
@@ -477,9 +651,24 @@ class OandaTradingBot:
 
     def run_cycle(self):
         print("DEBUG: Entering run_cycle", flush=True)
+        cycle_start_time = time.time()
+        
+        # Periodic health check
+        if ENABLE_HEALTH_CHECKS and self.performance_monitor:
+            if (self.last_health_check is None or 
+                (datetime.now() - self.last_health_check).total_seconds() >= HEALTH_CHECK_INTERVAL):
+                self._perform_health_check()
+                self.last_health_check = datetime.now()
+        
         # Check daily loss limit first
         current_balance = self.get_balance()
         print(f"DEBUG: Current balance in run_cycle: {current_balance}", flush=True)
+        
+        # Check minimum balance threshold
+        if current_balance < MIN_BALANCE_THRESHOLD:
+            logging.error(f"Balance {current_balance:.2f} below minimum threshold {MIN_BALANCE_THRESHOLD}, stopping.")
+            return False
+        
         daily_loss_pct = (self.daily_start_balance - current_balance) / self.daily_start_balance
         
         if daily_loss_pct > MAX_DAILY_LOSS_PERCENT / 100:
@@ -490,6 +679,16 @@ class OandaTradingBot:
         if not self.check_margin():
             logging.warning("Insufficient margin available, skipping this cycle.")
             return True
+        
+        # Update position state from API
+        if hasattr(self, 'risk_manager'):
+            try:
+                r = positions.OpenPositions(accountID=self.account_id)
+                response = self._rate_limited_request(r)
+                api_positions = response.get('positions', [])
+                self.risk_manager.update_positions_from_api(api_positions)
+            except Exception as e:
+                logging.warning(f"Failed to update positions from API: {e}")
         
         # Scan all pairs for signals (now returns signals and atr_readings)
         signals, atr_readings = self.scan_pairs_for_signals()
@@ -560,6 +759,25 @@ class OandaTradingBot:
             atr = best_signal['atr']
             confidence = best_signal['confidence']
             ml_prediction = best_signal.get('ml_prediction', 0.5)
+            
+            # Check for price gaps if enabled
+            if DETECT_PRICE_GAPS and len(best_signal['df']) >= 2:
+                current_price = best_signal['df']['close'].iloc[-1]
+                previous_price = best_signal['df']['close'].iloc[-2]
+                has_gap, gap_pct = self.data_validator.detect_price_gap(
+                    current_price, previous_price, PRICE_GAP_THRESHOLD_PCT
+                )
+                if has_gap:
+                    if SKIP_TRADING_ON_GAPS:
+                        logging.warning(f"Large price gap detected for {instrument}: {gap_pct:.2f}%, skipping trade")
+                        if self.structured_logger:
+                            self.structured_logger.log_trade_decision(
+                                instrument, signal, confidence, "SKIPPED",
+                                f"Price gap {gap_pct:.2f}% exceeds threshold"
+                            )
+                        return True
+                    else:
+                        logging.warning(f"Large price gap detected for {instrument}: {gap_pct:.2f}%, proceeding with caution")
             
             # Get volatility-adjusted stop/profit multipliers if applicable
             stop_multiplier = ATR_STOP_MULTIPLIER
@@ -640,7 +858,44 @@ class OandaTradingBot:
                     }
                     self.db.store_volatility_reading(vol_data)
         
+        # Record cycle metrics
+        if self.performance_monitor:
+            cycle_duration = time.time() - cycle_start_time
+            self.performance_monitor.record_cycle(cycle_duration, len(signals))
+        
         return True
+    
+    def _perform_health_check(self):
+        """Perform comprehensive health check on bot components."""
+        try:
+            health_results = HealthChecker.perform_full_health_check(
+                self.api, self.account_id, self.db, 
+                self.get_balance(), MIN_BALANCE_THRESHOLD
+            )
+            
+            if not health_results['overall']['healthy']:
+                logging.warning("Health check failed:")
+                for component, result in health_results.items():
+                    if component != 'overall' and not result.get('healthy', True):
+                        logging.warning(f"  - {component}: {result.get('message', 'Unknown issue')}")
+            else:
+                logging.info("Health check passed - all systems operational")
+            
+            # Log performance summary
+            if self.performance_monitor:
+                summary = self.performance_monitor.get_summary()
+                logging.info(f"Performance: {summary['trade_metrics']['success_rate_pct']:.1f}% trade success, "
+                           f"{summary['api_metrics']['error_rate_pct']:.1f}% API error rate")
+                
+                # Log risk summary
+                if hasattr(self, 'risk_manager'):
+                    balance = self.get_balance()
+                    risk_summary = self.risk_manager.get_risk_summary(balance)
+                    logging.info(f"Risk: {risk_summary['open_positions']}/{risk_summary['max_positions']} positions, "
+                               f"{risk_summary['risk_capacity_used_pct']:.1f}% capacity used")
+        
+        except Exception as e:
+            logging.error(f"Health check failed with exception: {e}")
 
     def run(self, interval=CHECK_INTERVAL):
         print(f"DEBUG: Entering run method with interval={interval}", flush=True)

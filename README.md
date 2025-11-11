@@ -86,12 +86,39 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 - **Model Training Data**: Historical data for ML retraining
 - **Trade Analysis**: Query and analyze past performance
 
+### Future-Proofing Capabilities (NEW!)
+- **Comprehensive Input Validation**:
+  - Validates candle data completeness and integrity (OHLC relationships, NaN detection)
+  - Validates ATR calculations with edge case handling
+  - Validates all order parameters before submission
+  - Detects and handles API errors gracefully
+- **Enhanced Risk Management**:
+  - Tracks all open positions and total exposure
+  - Enforces maximum position limits (default: 3 concurrent positions)
+  - Prevents over-exposure through correlation tracking (max 2 per base currency)
+  - Validates slippage within acceptable limits (max 2 pips)
+  - Position size limits per instrument (max 100k units)
+  - Total risk exposure limit (max 10% of balance)
+- **Advanced Monitoring & Logging**:
+  - Structured logging with context for better debugging
+  - Performance metrics for API calls, trades, and cycles
+  - Health checks every hour
+  - Automatic detection of system degradation
+  - Comprehensive error tracking and reporting
+- **Edge Case Handling**:
+  - Partial fill detection and configurable handling (accept/retry/cancel)
+  - Weekend/holiday market hours checking
+  - Price gap detection with configurable thresholds (default: 2%)
+  - Graceful API error recovery with exponential backoff
+  - Network timeout handling
+  - Market closed detection to prevent failed orders
+
 ### Additional Features
 - **Margin Checks**: Automatic margin availability verification
 - **Daily Loss Limits**: Stops trading if daily loss exceeds 6%
 - **Multiple Instruments**: Supports ALL tradable instruments on Oanda (100+ instruments including forex, commodities, indices, bonds, CFDs)
 - **CLI Interface**: Easy command-line control with rich options
-- **Comprehensive Testing**: 49 unit tests covering core functionality including dynamic instruments and volatility detection
+- **Comprehensive Testing**: 121 unit tests (66 original + 55 future-proofing) covering all functionality
 
 ## Strategies
 
@@ -156,6 +183,41 @@ VOLATILITY_ATR_WINDOW = 10  # Number of cycles to average ATR for detection
 # Dynamic Instrument Selection (NEW!)
 ENABLE_DYNAMIC_INSTRUMENTS = True  # Enable dynamic instrument selection from all available instruments
 DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before refreshing
+
+# Enhanced Risk Management (Future-Proofing) (NEW!)
+MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions
+MAX_RISK_PER_TRADE = 0.02  # Maximum risk per trade (2% of balance)
+MAX_TOTAL_RISK = 0.10  # Maximum total risk across all positions (10% of balance)
+MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments
+MAX_UNITS_PER_INSTRUMENT = 100000  # Maximum units per instrument
+MAX_SLIPPAGE_PIPS = 2.0  # Maximum acceptable slippage in pips
+
+# Input Validation (Future-Proofing) (NEW!)
+MIN_CANDLES_REQUIRED = 30  # Minimum candles required for strategy calculations
+VALIDATE_CANDLE_DATA = True  # Enable comprehensive candle data validation
+VALIDATE_ORDER_PARAMS = True  # Enable order parameter validation
+
+# Market Hours (Future-Proofing) (NEW!)
+CHECK_MARKET_HOURS = True  # Check if market is open before trading
+SKIP_WEEKEND_TRADING = True  # Skip trading on weekends
+
+# Gap Detection (Future-Proofing) (NEW!)
+DETECT_PRICE_GAPS = True  # Detect significant price gaps
+PRICE_GAP_THRESHOLD_PCT = 2.0  # Price gap threshold percentage
+SKIP_TRADING_ON_GAPS = True  # Skip trading when large gaps detected
+
+# Partial Fill Handling (Future-Proofing) (NEW!)
+PARTIAL_FILL_STRATEGY = 'ACCEPT'  # How to handle partial fills: 'ACCEPT', 'RETRY', 'CANCEL'
+MIN_PARTIAL_FILL_PCT = 50  # Minimum acceptable partial fill percentage
+
+# Health Monitoring (Future-Proofing) (NEW!)
+ENABLE_HEALTH_CHECKS = True  # Enable health monitoring
+HEALTH_CHECK_INTERVAL = 3600  # Health check interval in seconds (1 hour)
+MIN_BALANCE_THRESHOLD = 100  # Minimum balance to continue trading
+
+# Logging (Future-Proofing) (NEW!)
+ENABLE_STRUCTURED_LOGGING = True  # Enable structured logging with context
+LOG_LEVEL = 'INFO'  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
 
 ## Usage
