@@ -44,6 +44,17 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 - **Confidence Adjustment**: Position size scales with signal confidence
 - **Dynamic Calculation**: Adapts to account balance and market volatility
 - **Minimum Position Size Enforcement**: Automatically enforces minimum trade value ($1-2) to meet broker margin requirements, overriding risk-based calculations when needed while keeping stops and limits intact
+- **Auto-Scaling Position Sizing (NEW!)**: 
+  - Intelligently scales position sizes to fit available margin while respecting risk limits
+  - Calculates units constrained by both margin availability and risk tolerance
+  - Takes the smaller of the two constraints to ensure safety
+  - Enforces broker minimum trade sizes and trade values
+  - Rounds positions to instrument precision (whole units or fractional)
+  - Skips trades with clear logging when constraints cannot be met
+  - Provides detailed debug information for sizing decisions
+  - Enable with `ENABLE_AUTO_SCALE_UNITS = True` in config
+  - Configure margin buffer with `AUTO_SCALE_MARGIN_BUFFER` (defaults to `MARGIN_BUFFER`)
+  - Optional custom minimum units with `AUTO_SCALE_MIN_UNITS` (None = use instrument minimum)
 
 ### Multi-Timeframe Analysis
 - **H1 Confirmation**: Higher timeframe (1-hour) confirms M5 signals
@@ -181,6 +192,11 @@ ATR_STOP_MULTIPLIER = 1.0  # Stop loss = 1.0 × ATR
 ATR_PROFIT_MULTIPLIER = 2.5  # Take profit = 2.5 × ATR
 MAX_DAILY_LOSS_PERCENT = 6.0  # Daily loss limit
 MIN_TRADE_VALUE = 1.50  # Minimum trade value ($1-2 range) to meet broker margin requirements
+
+# Auto-Scaling Position Sizing (NEW!)
+ENABLE_AUTO_SCALE_UNITS = True  # Enable auto-scaling to fit available margin while respecting risk limits
+AUTO_SCALE_MARGIN_BUFFER = 0.0  # Margin buffer for auto-scaling (0.0 = use all, 0.5 = keep 50% buffer)
+AUTO_SCALE_MIN_UNITS = None  # Minimum units for auto-scaling (None = use instrument minimumTradeSize)
 
 # Adaptive Threshold (autonomous self-optimization)
 ENABLE_ADAPTIVE_THRESHOLD = True  # Enable dynamic threshold adjustment
