@@ -399,8 +399,38 @@ class OandaTradingBot:
         """
         # Get instrument metadata from cache
         inst_data = self.instruments_cache.get(instrument, {})
-        min_units = float(inst_data.get('minimumTradeSize', '1'))
-        margin_rate = float(inst_data.get('marginRate', 0.0333))  # Default ~30:1 leverage
+        
+        # Safe type conversion for metadata values (they may be strings from API)
+        try:
+            min_units = float(inst_data.get('minimumTradeSize', '1'))
+        except (ValueError, TypeError):
+            min_units = 1.0
+            logging.debug(f"Invalid minimumTradeSize for {instrument}, using 1.0")
+        
+        try:
+            margin_rate = float(inst_data.get('marginRate', 0.0333))
+        except (ValueError, TypeError):
+            margin_rate = 0.0333  # Default ~30:1 leverage
+            logging.debug(f"Invalid marginRate for {instrument}, using 0.0333")
+        
+        # Safe type conversion for input parameters
+        try:
+            current_price = float(current_price)
+        except (ValueError, TypeError):
+            current_price = 0.0
+            logging.warning(f"Invalid current_price for {instrument}: {current_price}")
+        
+        try:
+            available_margin = float(available_margin)
+        except (ValueError, TypeError):
+            available_margin = 0.0
+            logging.warning(f"Invalid available_margin: {available_margin}")
+        
+        try:
+            margin_buffer = float(margin_buffer)
+        except (ValueError, TypeError):
+            margin_buffer = 0.5
+            logging.debug(f"Invalid margin_buffer, using 0.5")
         
         # Calculate required margin for minimum trade size
         # Formula: required_margin = min_units * current_price * margin_rate

@@ -21,6 +21,48 @@ class PositionSizer:
         self.risk_per_trade = risk_per_trade
         self.kelly_fraction = kelly_fraction
         self.min_trade_value = min_trade_value
+    
+    @staticmethod
+    def _to_float(value, default=0.0):
+        """
+        Safely convert a value to float with fallback.
+        
+        Args:
+            value: Value to convert (can be string, int, float, etc.)
+            default: Default value if conversion fails
+            
+        Returns:
+            float: Converted value or default
+        """
+        try:
+            result = float(value)
+            # Check for non-finite values (NaN, inf, -inf)
+            if not np.isfinite(result):
+                logging.warning(f"Non-finite value encountered: {value}, using default {default}")
+                return default
+            return result
+        except (ValueError, TypeError, AttributeError):
+            logging.debug(f"Could not convert '{value}' to float, using default {default}")
+            return default
+    
+    @staticmethod
+    def _to_int(value, default=0):
+        """
+        Safely convert a value to int with fallback.
+        
+        Args:
+            value: Value to convert (can be string, int, float, etc.)
+            default: Default value if conversion fails
+            
+        Returns:
+            int: Converted value or default
+        """
+        try:
+            result = int(float(value))  # Convert via float first to handle "1.0" -> 1
+            return result
+        except (ValueError, TypeError, AttributeError):
+            logging.debug(f"Could not convert '{value}' to int, using default {default}")
+            return default
         
     def calculate_kelly_criterion(self, win_rate, avg_win, avg_loss):
         """
@@ -296,12 +338,12 @@ class PositionSizer:
             balance: Account balance
             stop_loss_pips: Stop loss distance in pips
             pip_value: Value of 1 pip for the instrument
-            current_price: Current price of the instrument
+            current_price: Current price of the instrument (can be string or numeric)
             available_margin: Available margin from API
-            margin_rate: Margin rate for the instrument (e.g., 0.0333 for ~30:1 leverage)
-            minimum_trade_size: Minimum trade size from instrument metadata (as string)
-            trade_units_precision: Precision for rounding units (0 = integer, -1 = tens, etc.)
-            maximum_order_units: Maximum order units from instrument metadata (as string)
+            margin_rate: Margin rate for the instrument (can be string or numeric, e.g., 0.0333 for ~30:1 leverage)
+            minimum_trade_size: Minimum trade size from instrument metadata (can be string or numeric)
+            trade_units_precision: Precision for rounding units (can be string or numeric, 0 = integer, -1 = tens, etc.)
+            maximum_order_units: Maximum order units from instrument metadata (can be string or numeric)
             risk_per_trade: Risk per trade as percentage (e.g., 0.02 for 2%)
             max_units_per_instrument: Maximum units per instrument from config
             min_trade_value: Minimum trade value in account currency
@@ -313,18 +355,19 @@ class PositionSizer:
         """
         debug = {}
         
-        # Parse minimum and maximum from strings
-        try:
-            min_trade_size = float(minimum_trade_size)
-        except (ValueError, TypeError):
-            min_trade_size = 1.0
-            logging.warning(f"Invalid minimumTradeSize '{minimum_trade_size}', using 1.0")
-        
-        try:
-            max_order_units = float(maximum_order_units)
-        except (ValueError, TypeError):
-            max_order_units = 100000000.0
-            logging.warning(f"Invalid maximumOrderUnits '{maximum_order_units}', using 100000000")
+        # Robust type coercion for all numeric inputs
+        current_price = self._to_float(current_price, 0.0)
+        margin_rate = self._to_float(margin_rate, 0.0333)  # Default ~30:1 leverage
+        min_trade_size = self._to_float(minimum_trade_size, 1.0)
+        trade_units_precision = self._to_int(trade_units_precision, 0)
+        max_order_units = self._to_float(maximum_order_units, max_units_per_instrument)
+        stop_loss_pips = self._to_float(stop_loss_pips, 0.0)
+        pip_value = self._to_float(pip_value, 0.0)
+        available_margin = self._to_float(available_margin, 0.0)
+        balance = self._to_float(balance, 0.0)
+        risk_per_trade = self._to_float(risk_per_trade, 0.02)
+        min_trade_value = self._to_float(min_trade_value, 1.50)
+        margin_buffer = self._to_float(margin_buffer, 0.5)
         
         # Effective available margin (after buffer)
         effective_available_margin = available_margin * (1 - margin_buffer)
@@ -334,6 +377,7 @@ class PositionSizer:
         
         if effective_available_margin <= 0:
             debug['reason'] = 'No effective margin available after buffer'
+            logging.debug(f"Auto-scale skipped: {debug['reason']} (available_margin={available_margin}, margin_buffer={margin_buffer})")
             return 0, 0.0, debug
         
         # Calculate units by margin constraint
@@ -341,6 +385,7 @@ class PositionSizer:
         # units = effective_available_margin / (current_price * margin_rate)
         if current_price <= 0 or margin_rate <= 0:
             debug['reason'] = f'Invalid price ({current_price}) or margin_rate ({margin_rate})'
+            logging.debug(f"Auto-scale skipped: {debug['reason']}")
             return 0, 0.0, debug
         
         required_margin_per_unit = current_price * margin_rate
@@ -359,6 +404,7 @@ class PositionSizer:
             units_by_risk = 0
             debug['units_by_risk'] = 0
             debug['risk_per_unit'] = 0
+            logging.debug(f"Risk calculation skipped: stop_loss_pips={stop_loss_pips}, pip_value={pip_value}")
         else:
             risk_per_unit = stop_loss_pips * pip_value
             units_by_risk = int(risk_amount / risk_per_unit)
