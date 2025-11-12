@@ -252,7 +252,10 @@ class OandaTradingBot:
                 self.performance_monitor.record_api_call(success, duration, error)
 
     def _fetch_and_cache_instruments(self):
-        """Fetch all tradable instruments from Oanda API and cache their metadata."""
+        """Fetch all tradable instruments from Oanda API and cache their metadata.
+        
+        This includes minimumTrailingStopDistance to prevent STOP_LOSS_ON_FILL_LOSS errors.
+        """
         try:
             r = accounts.AccountInstruments(accountID=self.account_id)
             response = self._rate_limited_request(r)
