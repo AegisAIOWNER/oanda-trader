@@ -859,6 +859,11 @@ class OandaTradingBot:
             sl_pips = sl_price / pip_size
             tp_pips = tp_price / pip_size
             
+            # Cap take profit at 50 pips to prevent 'Take profit out of reasonable range' errors
+            if tp_pips > 50:
+                logging.info(f"Take profit capped at 50 pips (was {tp_pips:.2f} pips) for {instrument}")
+                tp_pips = 50
+            
             return sl_pips, tp_pips
         else:
             # Fallback to config defaults (already in pips)
