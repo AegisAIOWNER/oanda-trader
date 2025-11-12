@@ -70,7 +70,7 @@ DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before ref
 
 # Enhanced Risk Management settings (future-proofing)
 MAX_OPEN_POSITIONS = 1  # Maximum concurrent open positions (single-trade strategy)
-MAX_RISK_PER_TRADE = 0.1  # Maximum risk per trade (10% of balance) - increased for focused single-trade strategy on high-confidence signals like USB05Y_USD
+MAX_RISK_PER_TRADE = 0.5  # Maximum risk per trade (50% of balance) - increased for focused single-trade strategy on high-confidence signals like USB05Y_USD
 MAX_TOTAL_RISK = 0.15  # Maximum total risk across all positions (15% of balance) - adjusted for higher individual risk
 MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments (same base currency)
 MAX_UNITS_PER_INSTRUMENT = 100000  # Maximum units per instrument
@@ -116,7 +116,7 @@ ENABLE_STRUCTURED_LOGGING = True  # Enable structured logging with context
 LOG_LEVEL = 'INFO'  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 # P&L Analytics and Reporting
-ENABLE_COMPREHENSIVE_ANALYTICS = True  # Enable comprehensive P&L analytics
+ENABLE_COMPREHIVE_ANALYTICS = True  # Enable comprehensive P&L analytics
 ANALYTICS_REPORT_INTERVAL = 3600  # Generate analytics report every N seconds (1 hour)
 ANALYTICS_MIN_TRADES_FOR_SUGGESTIONS = 5  # Minimum trades before generating suggestions
 ANALYTICS_DRAWDOWN_THRESHOLD = 0.10  # Alert if drawdown exceeds 10%
