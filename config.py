@@ -70,7 +70,7 @@ DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before ref
 
 # Enhanced Risk Management settings (future-proofing)
 MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions
-MAX_RISK_PER_TRADE = 0.02  # Maximum risk per trade (2% of balance) - lowered for micro-trades
+MAX_RISK_PER_TRADE = 0.05  # Maximum risk per trade (5% of balance) - increased for volatile pairs like EU50_EUR
 MAX_TOTAL_RISK = 0.15  # Maximum total risk across all positions (15% of balance) - adjusted for higher individual risk
 MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments (same base currency)
 MAX_UNITS_PER_INSTRUMENT = 100000  # Maximum units per instrument
