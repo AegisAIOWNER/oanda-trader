@@ -276,7 +276,7 @@ class OandaTradingBot:
                         'minimumTradeSize': inst.get('minimumTradeSize', '1'),
                         'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000'),
                         'marginRate': inst.get('marginRate', 0.0333),
-                        'minimumTrailingStopDistance': inst.get('minimumTrailingStopDistance', '0.0005')
+                        'minimumTrailingStopDistance': inst.get('minimumTrailingStopDistance', '0.001')
                     }
             
             self.instruments_cache_time = datetime.now()
@@ -300,7 +300,7 @@ class OandaTradingBot:
                     'minimumTradeSize': '1',
                     'maximumOrderUnits': '100000000',
                     'marginRate': 0.0333,  # Default ~30:1 leverage
-                    'minimumTrailingStopDistance': '0.01' if 'JPY' in inst else '0.0005'
+                    'minimumTrailingStopDistance': '0.01' if 'JPY' in inst else '0.001'
                 }
             self.instruments_cache_time = datetime.now()
     
@@ -345,7 +345,7 @@ class OandaTradingBot:
                             'minimumTradeSize': inst.get('minimumTradeSize', '1'),
                             'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000'),
                             'marginRate': inst.get('marginRate', 0.0333),
-                            'minimumTrailingStopDistance': inst.get('minimumTrailingStopDistance', '0.0005')
+                            'minimumTrailingStopDistance': inst.get('minimumTrailingStopDistance', '0.001')
                         }
                         pip_location = inst.get('pipLocation', -4)
                         return 10 ** pip_location
@@ -609,7 +609,7 @@ class OandaTradingBot:
         if sl_pips:
             # Get minimum trailing stop distance for this instrument
             inst_data = self.instruments_cache.get(instrument, {})
-            min_trailing_stop_distance = float(inst_data.get('minimumTrailingStopDistance', 0.0005))
+            min_trailing_stop_distance = float(inst_data.get('minimumTrailingStopDistance', 0.001))
             
             # Convert stop loss pips to price distance
             pip_size = self._get_instrument_pip_size(instrument)
