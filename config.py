@@ -10,8 +10,8 @@ ENVIRONMENT = os.getenv('OANDA_ENVIRONMENT', 'practice')  # 'practice' or 'live'
 # Scalability configs
 INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', 'NZD_USD', 'EUR_GBP', 'USD_CHF']  # Expanded list for dynamic scanning
 RATE_LIMIT_DELAY = 1.0 / 30  # 30 req/sec for practice
-MARGIN_BUFFER = 0.1  # 10% margin buffer
-DEFAULT_UNITS = 1000  # Base trade size; reduce for scalping (e.g., 100)
+MARGIN_BUFFER = 0.05  # Reduced to free up more capital for trades
+DEFAULT_UNITS = 5000  # Increased to force bigger base sizes for viable positions
 STRATEGY = 'advanced_scalp'  # New advanced scalping strategy
 
 # For scalping
@@ -27,7 +27,7 @@ MAX_DAILY_LOSS_PERCENT = 6.0  # Daily stop
 MAX_PAIRS_TO_SCAN = 25  # Maximum number of pairs to scan for signals
 CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence score to place a trade (0.0 to 1.0) - lowered for more trades
 ATR_PERIOD = 14  # Period for ATR calculation
-ATR_STOP_MULTIPLIER = 1.0  # Multiplier for ATR-based stop loss
+ATR_STOP_MULTIPLIER = 0.5  # Tighter SL to reduce stop loss hits
 ATR_PROFIT_MULTIPLIER = 1.5  # Multiplier for ATR-based take profit
 VOLUME_MA_PERIOD = 20  # Period for volume moving average
 MIN_VOLUME_RATIO = 1.2  # Minimum volume ratio for confirmation (current volume / avg volume)
@@ -69,7 +69,7 @@ DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before ref
 
 # Enhanced Risk Management settings (future-proofing)
 MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions
-MAX_RISK_PER_TRADE = 0.05  # Maximum risk per trade (5% of balance) - increased for more trades
+MAX_RISK_PER_TRADE = 0.02  # Maximum risk per trade (2% of balance) - lowered for micro-trades
 MAX_TOTAL_RISK = 0.15  # Maximum total risk across all positions (15% of balance) - adjusted for higher individual risk
 MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments (same base currency)
 MAX_UNITS_PER_INSTRUMENT = 100000  # Maximum units per instrument
