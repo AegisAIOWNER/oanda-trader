@@ -53,8 +53,10 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
   - Poor performance (45%- win rate, 0.8- profit factor) → Raises threshold to demand higher quality
   - Marginal performance (50-55% win rate, ~1.0 profit factor) → Lowers threshold for more opportunities
 - **Decision Logging**: Stores all adjustments with reasoning in database for learning
+- **Automatic Persistence**: ⭐ **Threshold persists across bot restarts** - never resets to config base value
 - **Safety Bounds**: Configurable min/max thresholds prevent extreme adjustments
 - **Transparent Reasoning**: Every adjustment logged with clear explanation
+- **📚 Documentation**: See [ADAPTIVE_THRESHOLD_PERSISTENCE.md](ADAPTIVE_THRESHOLD_PERSISTENCE.md) for complete details
 
 ### Market Volatility Detection (NEW!)
 - **Automatic Volatility Monitoring**: Calculates average ATR across all scanned pairs
@@ -452,7 +454,14 @@ Built-in safety features:
 Run unit tests to verify functionality:
 
 ```bash
+# Run main bot tests
 python -m unittest test_trading_bot -v
+
+# Run adaptive threshold tests (8 tests)
+python -m unittest discover -s . -p "test_adaptive*.py" -v
+
+# Run demonstration of threshold persistence
+python demo_threshold_persistence.py
 ```
 
 Test coverage includes:
@@ -463,3 +472,8 @@ Test coverage includes:
 - Database operations
 - Error recovery mechanisms
 - Backtesting metrics
+- **Adaptive threshold persistence** (8 comprehensive tests)
+  - Lifecycle and adjustment logic
+  - Persistence across restarts ⭐
+  - Edge cases (bounds, empty DB, rapid adjustments)
+  - See [test_adaptive_integration.py](test_adaptive_integration.py) and [test_adaptive_threshold_edge_cases.py](test_adaptive_threshold_edge_cases.py)
