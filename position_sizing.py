@@ -326,6 +326,21 @@ class PositionSizer:
             max_order_units = 100000000.0
             logging.warning(f"Invalid maximumOrderUnits '{maximum_order_units}', using 100000000")
         
+        # Convert current_price and margin_rate to float to prevent TypeError
+        try:
+            current_price = float(current_price)
+        except (ValueError, TypeError):
+            logging.error(f"Invalid current_price '{current_price}', cannot calculate units")
+            debug['reason'] = f'Invalid current_price: {current_price}'
+            return 0, 0.0, debug
+        
+        try:
+            margin_rate = float(margin_rate)
+        except (ValueError, TypeError):
+            logging.error(f"Invalid margin_rate '{margin_rate}', cannot calculate units")
+            debug['reason'] = f'Invalid margin_rate: {margin_rate}'
+            return 0, 0.0, debug
+        
         # Effective available margin (after buffer)
         effective_available_margin = available_margin * (1 - margin_buffer)
         debug['available_margin'] = available_margin
