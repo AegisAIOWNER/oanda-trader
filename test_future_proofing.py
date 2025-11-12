@@ -616,12 +616,12 @@ class TestConfigurationValues(unittest.TestCase):
     """Test configuration values for single-trade strategy."""
     
     def test_max_risk_per_trade_config_value(self):
-        """Test that MAX_RISK_PER_TRADE is set to 0.1 (10%) for single-trade strategy."""
+        """Test that MAX_RISK_PER_TRADE is set to 0.5 (50%) for high-confidence signals."""
         import config
         
-        # Verify MAX_RISK_PER_TRADE is set to 0.1 (10%)
-        self.assertEqual(config.MAX_RISK_PER_TRADE, 0.1, 
-                        "MAX_RISK_PER_TRADE should be 0.1 (10%) for focused single-trade strategy")
+        # Verify MAX_RISK_PER_TRADE is set to 0.5 (50%)
+        self.assertEqual(config.MAX_RISK_PER_TRADE, 0.5, 
+                        "MAX_RISK_PER_TRADE should be 0.5 (50%) for focused strategy on high-confidence signals")
         
     def test_max_risk_per_trade_validator_accepts_10_percent(self):
         """Test that RiskValidator correctly validates trades at 10% risk."""
