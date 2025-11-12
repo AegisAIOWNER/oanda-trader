@@ -243,6 +243,145 @@ class PositionSizer:
             
             return adjusted_units, risk_pct
     
+    def calculate_auto_scaled_units(self, balance, available_margin, current_price, stop_loss_pips,
+                                     pip_value, margin_rate=0.0333, auto_scale_margin_buffer=0.0,
+                                     minimum_trade_size=1, trade_units_precision=0,
+                                     maximum_order_units=100000000, max_units_per_instrument=100000):
+        """
+        Calculate auto-scaled position size that fits available margin while respecting risk limits.
+        
+        This method implements intelligent position sizing that:
+        1. Calculates maximum units based on available margin
+        2. Calculates maximum units based on risk tolerance
+        3. Takes the smaller of the two to respect both constraints
+        4. Rounds to instrument precision
+        5. Enforces broker minimum trade size and minimum trade value
+        
+        Args:
+            balance: Account balance
+            available_margin: Available margin from API
+            current_price: Current instrument price
+            stop_loss_pips: Stop loss distance in pips
+            pip_value: Value of 1 pip for the instrument
+            margin_rate: Margin rate from instrument metadata (default 0.0333 for ~30:1 leverage)
+            auto_scale_margin_buffer: Margin buffer to maintain (e.g., 0.5 = keep 50% as buffer)
+            minimum_trade_size: Minimum trade size from instrument metadata
+            trade_units_precision: Units precision from instrument metadata (0 = whole units)
+            maximum_order_units: Maximum order units from instrument metadata
+            max_units_per_instrument: Maximum units per instrument from config
+            
+        Returns:
+            tuple: (units, risk_pct, debug_info) or (0, 0, skip_reason_dict) if trade should be skipped
+        """
+        debug_info = {}
+        
+        # Validate inputs
+        if current_price <= 0:
+            return 0, 0, {'skip_reason': 'Invalid current price', 'current_price': current_price}
+        
+        if available_margin <= 0:
+            return 0, 0, {'skip_reason': 'No available margin', 'available_margin': available_margin}
+        
+        # Calculate effective available margin after buffer
+        effective_available_margin = max(0.0, available_margin * (1.0 - auto_scale_margin_buffer))
+        debug_info['effective_available_margin'] = effective_available_margin
+        
+        if effective_available_margin <= 0:
+            return 0, 0, {'skip_reason': 'Insufficient margin after buffer', 
+                         'available_margin': available_margin,
+                         'margin_buffer': auto_scale_margin_buffer}
+        
+        # Calculate units constrained by margin
+        # Formula: required_margin = units * current_price * margin_rate
+        # Solving for units: units = effective_available_margin / (current_price * margin_rate)
+        required_margin_per_unit = current_price * margin_rate
+        if required_margin_per_unit <= 0:
+            # Fallback to conservative estimate
+            required_margin_per_unit = current_price * 0.0333
+        
+        units_by_margin = int(effective_available_margin / required_margin_per_unit)
+        debug_info['units_by_margin'] = units_by_margin
+        debug_info['required_margin_per_unit'] = required_margin_per_unit
+        
+        # Calculate units constrained by risk
+        risk_amount = balance * self.risk_per_trade
+        risk_per_unit = stop_loss_pips * pip_value
+        
+        if risk_per_unit > 0:
+            units_by_risk = int(risk_amount / risk_per_unit)
+        else:
+            units_by_risk = 0
+        
+        debug_info['units_by_risk'] = units_by_risk
+        debug_info['risk_amount'] = risk_amount
+        debug_info['risk_per_unit'] = risk_per_unit
+        
+        # Take the minimum to respect both margin and risk constraints
+        candidate_units_raw = min(
+            units_by_margin,
+            units_by_risk if units_by_risk > 0 else units_by_margin,
+            int(maximum_order_units),
+            max_units_per_instrument
+        )
+        
+        debug_info['candidate_units_raw'] = candidate_units_raw
+        
+        if candidate_units_raw <= 0:
+            return 0, 0, {'skip_reason': 'Calculated units <= 0',
+                         'units_by_margin': units_by_margin,
+                         'units_by_risk': units_by_risk}
+        
+        # Round to instrument precision
+        # trade_units_precision is the number of decimal places (0 = whole units)
+        if trade_units_precision == 0:
+            candidate_units = int(candidate_units_raw)
+        else:
+            # For fractional units, round to precision
+            precision_factor = 10 ** trade_units_precision
+            candidate_units = int(candidate_units_raw * precision_factor) / precision_factor
+        
+        debug_info['candidate_units_after_rounding'] = candidate_units
+        
+        # Parse minimum_trade_size (might be string from API)
+        try:
+            min_trade_size = float(minimum_trade_size)
+        except (ValueError, TypeError):
+            min_trade_size = 1
+        
+        debug_info['min_trade_size'] = min_trade_size
+        
+        # Enforce instrument minimum trade size
+        if candidate_units < min_trade_size:
+            logging.warning(f"Candidate units {candidate_units} below instrument minimum {min_trade_size}")
+            return 0, 0, {'skip_reason': 'Below instrument minimum trade size',
+                         'candidate_units': candidate_units,
+                         'minimum_trade_size': min_trade_size}
+        
+        # Enforce minimum trade value
+        # trade_value = units * stop_loss_pips * pip_value (potential loss)
+        trade_value = candidate_units * stop_loss_pips * pip_value
+        debug_info['trade_value'] = trade_value
+        
+        if trade_value < self.min_trade_value:
+            logging.warning(f"Trade value ${trade_value:.2f} below minimum ${self.min_trade_value:.2f}")
+            return 0, 0, {'skip_reason': 'Below minimum trade value',
+                         'trade_value': trade_value,
+                         'min_trade_value': self.min_trade_value}
+        
+        # Calculate resulting risk percentage
+        actual_risk_amount = candidate_units * stop_loss_pips * pip_value
+        resulting_risk_pct = actual_risk_amount / balance if balance > 0 else 0
+        
+        debug_info['final_units'] = candidate_units
+        debug_info['resulting_risk_pct'] = resulting_risk_pct
+        debug_info['actual_risk_amount'] = actual_risk_amount
+        
+        logging.info(f"Auto-scaled units: {candidate_units} "
+                    f"(margin-limited: {units_by_margin}, risk-limited: {units_by_risk}, "
+                    f"final risk: {resulting_risk_pct*100:.2f}%)")
+        
+        return candidate_units, resulting_risk_pct, debug_info
+    
     def _enforce_minimum_position_size(self, units, pip_value, stop_loss_pips):
         """
         Enforce minimum position size based on minimum trade value.

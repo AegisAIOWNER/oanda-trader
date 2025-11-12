@@ -44,6 +44,11 @@ RISK_PER_TRADE = 0.02  # 2% risk per trade for fixed percentage method
 KELLY_FRACTION = 0.25  # Use 25% of Kelly Criterion (quarter Kelly for safety)
 MIN_TRADE_VALUE = 1.50  # Minimum trade value in account currency ($1-2 range, using $1.50 as midpoint) to meet Oanda margin requirements
 
+# Auto-scaling Position Sizing settings
+ENABLE_AUTO_SCALE_UNITS = True  # Enable auto-scaling to fit available margin while respecting risk limits
+AUTO_SCALE_MARGIN_BUFFER = MARGIN_BUFFER  # Margin buffer for auto-scaling (reuse existing MARGIN_BUFFER)
+AUTO_SCALE_MIN_UNITS = None  # Minimum units for auto-scaling (None = use instrument minimumTradeSize)
+
 # Multi-timeframe settings
 ENABLE_MULTIFRAME = True  # Enable multi-timeframe confirmation
 PRIMARY_TIMEFRAME = 'M5'  # Primary timeframe for signals
