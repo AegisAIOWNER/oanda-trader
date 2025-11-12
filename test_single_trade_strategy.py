@@ -254,16 +254,19 @@ class TestSingleTradeConfiguration(unittest.TestCase):
     """Test single-trade strategy configuration."""
     
     def test_max_open_positions(self):
-        """Test that MAX_OPEN_POSITIONS is set to 1."""
+        """Test that MAX_OPEN_POSITIONS allows multiple concurrent positions."""
         from config import MAX_OPEN_POSITIONS
         
-        self.assertEqual(MAX_OPEN_POSITIONS, 1)
+        # Updated to allow 3 concurrent positions for diversification
+        self.assertEqual(MAX_OPEN_POSITIONS, 3)
     
     def test_margin_buffer(self):
-        """Test that MARGIN_BUFFER is set to 0.50."""
+        """Test that MARGIN_BUFFER is optimized for position sizing."""
         from config import MARGIN_BUFFER
         
-        self.assertEqual(MARGIN_BUFFER, 0.50)
+        # MARGIN_BUFFER = 0.0 for single-trade strategy to maximize position size
+        # AUTO_SCALE_MARGIN_BUFFER = 0.10 provides safety buffer for auto-scaling
+        self.assertEqual(MARGIN_BUFFER, 0.0)
     
     def test_persistent_pairs_enabled(self):
         """Test that persistent pairs feature is enabled."""

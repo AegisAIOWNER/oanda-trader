@@ -9,6 +9,11 @@ ENVIRONMENT = os.getenv('OANDA_ENVIRONMENT', 'practice')  # 'practice' or 'live'
 
 # Scalability configs
 INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', 'NZD_USD', 'EUR_GBP', 'USD_CHF']  # Expanded list for dynamic scanning
+
+# Curated Instruments Filter (for profitability focus on high-liquidity FX pairs)
+CURATED_INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', 'NZD_USD', 'EUR_GBP', 'USD_CHF']  # Top FX majors/CHF pairs
+ENABLE_CURATED_FILTER = True  # Apply curated filtering at scan-time (test-safe: preserves original list when no overlap)
+
 RATE_LIMIT_DELAY = 1.0 / 30  # 30 req/sec for practice
 MARGIN_BUFFER = 0.0  # Use all available margin for single-trade strategy to maximize position size
 DEFAULT_UNITS = 5000  # Increased to force bigger base sizes for viable positions
@@ -25,10 +30,10 @@ MAX_DAILY_LOSS_PERCENT = 6.0  # Daily stop
 
 # Advanced scalping settings
 MAX_PAIRS_TO_SCAN = 25  # Maximum number of pairs to scan for signals
-CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence score to place a trade (0.0 to 1.0) - lowered for more trades
+CONFIDENCE_THRESHOLD = 0.7  # Minimum confidence score to place a trade (0.0 to 1.0) - raised for quality signals
 ATR_PERIOD = 14  # Period for ATR calculation
-ATR_STOP_MULTIPLIER = 0.5  # Tighter SL to reduce stop loss hits
-ATR_PROFIT_MULTIPLIER = 1.5  # Multiplier for ATR-based take profit
+ATR_STOP_MULTIPLIER = 1.0  # Balanced SL for better risk/reward
+ATR_PROFIT_MULTIPLIER = 2.5  # Higher profit target for improved risk/reward ratio
 VOLUME_MA_PERIOD = 20  # Period for volume moving average
 MIN_VOLUME_RATIO = 1.2  # Minimum volume ratio for confirmation (current volume / avg volume)
 
@@ -40,7 +45,7 @@ ML_AUTO_TRAIN_INTERVAL = 10  # Automatically retrain model after N new trades
 
 # Position Sizing settings
 POSITION_SIZING_METHOD = 'fixed_percentage'  # 'fixed_percentage' or 'kelly_criterion'
-RISK_PER_TRADE = 0.02  # 2% risk per trade for fixed percentage method
+RISK_PER_TRADE = 0.01  # 1% risk per trade for conservative risk management
 KELLY_FRACTION = 0.25  # Use 25% of Kelly Criterion (quarter Kelly for safety)
 MIN_TRADE_VALUE = 1.50  # Minimum trade value in account currency ($1-2 range, using $1.50 as midpoint) to meet Oanda margin requirements
 
@@ -73,11 +78,11 @@ ENABLE_AFFORDABILITY_FILTER = True  # Enable affordability check to skip instrum
 
 # Auto-scaling Position Sizing settings
 ENABLE_AUTO_SCALE_UNITS = True  # Enable auto-scaling position sizing to fit available margin and risk
-AUTO_SCALE_MARGIN_BUFFER = MARGIN_BUFFER  # Margin buffer for auto-scaling (reuse existing buffer by default)
+AUTO_SCALE_MARGIN_BUFFER = 0.10  # 10% margin buffer for auto-scaling (safer than 0.0)
 AUTO_SCALE_MIN_UNITS = None  # Optional global minimum units; if None, use instrument minimumTradeSize
 
 # Enhanced Risk Management settings (future-proofing)
-MAX_OPEN_POSITIONS = 1  # Maximum concurrent open positions (single-trade strategy)
+MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions (allows diversification)
 MAX_RISK_PER_TRADE = 0.5  # Maximum risk per trade (50% of balance) - increased for focused single-trade strategy on high-confidence signals like USB05Y_USD
 MAX_TOTAL_RISK = 0.15  # Maximum total risk across all positions (15% of balance) - adjusted for higher individual risk
 MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments (same base currency)
