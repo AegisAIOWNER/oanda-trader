@@ -68,6 +68,9 @@ VOLATILITY_ATR_WINDOW = 10  # Number of cycles to average ATR for volatility det
 ENABLE_DYNAMIC_INSTRUMENTS = True  # Enable dynamic instrument selection from all available instruments
 DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before refreshing
 
+# Affordability Pre-filter settings
+ENABLE_AFFORDABILITY_FILTER = True  # Enable affordability check to skip instruments with insufficient margin
+
 # Enhanced Risk Management settings (future-proofing)
 MAX_OPEN_POSITIONS = 1  # Maximum concurrent open positions (single-trade strategy)
 MAX_RISK_PER_TRADE = 0.5  # Maximum risk per trade (50% of balance) - increased for focused single-trade strategy on high-confidence signals like USB05Y_USD
