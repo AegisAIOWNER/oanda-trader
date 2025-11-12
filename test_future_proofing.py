@@ -612,5 +612,39 @@ class TestHealthChecker(unittest.TestCase):
         self.assertIn("10.00", message)
 
 
+class TestConfigurationValues(unittest.TestCase):
+    """Test configuration values for single-trade strategy."""
+    
+    def test_max_risk_per_trade_config_value(self):
+        """Test that MAX_RISK_PER_TRADE is set to 0.1 (10%) for single-trade strategy."""
+        import config
+        
+        # Verify MAX_RISK_PER_TRADE is set to 0.1 (10%)
+        self.assertEqual(config.MAX_RISK_PER_TRADE, 0.1, 
+                        "MAX_RISK_PER_TRADE should be 0.1 (10%) for focused single-trade strategy")
+        
+    def test_max_risk_per_trade_validator_accepts_10_percent(self):
+        """Test that RiskValidator correctly validates trades at 10% risk."""
+        # Create validator with 10% max risk
+        validator = RiskValidator(
+            max_open_positions=1,
+            max_risk_per_trade=0.1,  # 10%
+            max_total_risk=0.15,
+            max_slippage_pips=2.0
+        )
+        
+        # Test that 10% risk is accepted
+        balance = 10000
+        risk_amount = 1000  # 10% of 10000
+        is_valid, message = validator.validate_position_risk(risk_amount, balance)
+        self.assertTrue(is_valid, f"10% risk should be valid: {message}")
+        
+        # Test that 11% risk is rejected
+        risk_amount = 1100  # 11% of 10000
+        is_valid, message = validator.validate_position_risk(risk_amount, balance)
+        self.assertFalse(is_valid, "11% risk should be rejected")
+        self.assertIn("exceeds maximum", message)
+
+
 if __name__ == '__main__':
     unittest.main()
