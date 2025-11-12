@@ -945,13 +945,15 @@ class TestDynamicInstruments(unittest.TestCase):
         
         sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
         
+        # With ATR_STOP_MULTIPLIER = 0.5 and ATR_PROFIT_MULTIPLIER = 1.5
         # pip_size = 0.1 (from pipLocation -1)
-        # sl_price = 1.5 * 1.0 = 1.5
+        # sl_price = 1.5 * 0.5 = 0.75
         # tp_price = 1.5 * 1.5 = 2.25
-        # sl_pips = 1.5 / 0.1 = 15.0
+        # sl_pips = 0.75 / 0.1 = 7.5
+        # BUT: minimum 10 pips is enforced, so sl_pips = 10.0
         # tp_pips = 2.25 / 0.1 = 22.5
         
-        self.assertAlmostEqual(sl_pips, 15.0, places=5)
+        self.assertAlmostEqual(sl_pips, 10.0, places=5)  # Enforced minimum
         self.assertAlmostEqual(tp_pips, 22.5, places=5)
     
     def test_fallback_to_legacy_pip_logic(self):
