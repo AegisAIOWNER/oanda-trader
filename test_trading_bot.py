@@ -116,15 +116,15 @@ class TestATRStopsCalculation(unittest.TestCase):
         
         sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
         
-        # With ATR_STOP_MULTIPLIER = 1.0 and ATR_PROFIT_MULTIPLIER = 2.5
+        # With ATR_STOP_MULTIPLIER = 1.0 and ATR_PROFIT_MULTIPLIER = 1.5
         # sl_price = 0.0002 * 1.0 = 0.0002
-        # tp_price = 0.0002 * 2.5 = 0.0005
+        # tp_price = 0.0002 * 1.5 = 0.0003
         # For EUR_USD, pip_size = 0.0001
         # sl_pips = 0.0002 / 0.0001 = 2.0
-        # tp_pips = 0.0005 / 0.0001 = 5.0
+        # tp_pips = 0.0003 / 0.0001 = 3.0
         
         self.assertAlmostEqual(sl_pips, 2.0, places=5)
-        self.assertAlmostEqual(tp_pips, 5.0, places=5)
+        self.assertAlmostEqual(tp_pips, 3.0, places=5)
     
     def test_calculate_atr_stops_usd_jpy(self):
         """Test ATR stops calculation for USD_JPY (JPY pair)."""
@@ -134,15 +134,15 @@ class TestATRStopsCalculation(unittest.TestCase):
         
         sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
         
-        # With ATR_STOP_MULTIPLIER = 1.0 and ATR_PROFIT_MULTIPLIER = 2.5
+        # With ATR_STOP_MULTIPLIER = 1.0 and ATR_PROFIT_MULTIPLIER = 1.5
         # sl_price = 0.15 * 1.0 = 0.15
-        # tp_price = 0.15 * 2.5 = 0.375
+        # tp_price = 0.15 * 1.5 = 0.225
         # For USD_JPY, pip_size = 0.01
         # sl_pips = 0.15 / 0.01 = 15.0
-        # tp_pips = 0.375 / 0.01 = 37.5
+        # tp_pips = 0.225 / 0.01 = 22.5
         
         self.assertAlmostEqual(sl_pips, 15.0, places=5)
-        self.assertAlmostEqual(tp_pips, 37.5, places=5)
+        self.assertAlmostEqual(tp_pips, 22.5, places=5)
     
     def test_calculate_atr_stops_gbp_usd(self):
         """Test ATR stops calculation for GBP_USD (standard pair)."""
@@ -153,13 +153,13 @@ class TestATRStopsCalculation(unittest.TestCase):
         sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
         
         # sl_price = 0.0004 * 1.0 = 0.0004
-        # tp_price = 0.0004 * 2.5 = 0.0010
+        # tp_price = 0.0004 * 1.5 = 0.0006
         # For GBP_USD, pip_size = 0.0001
         # sl_pips = 0.0004 / 0.0001 = 4.0
-        # tp_pips = 0.0010 / 0.0001 = 10.0
+        # tp_pips = 0.0006 / 0.0001 = 6.0
         
         self.assertAlmostEqual(sl_pips, 4.0, places=5)
-        self.assertAlmostEqual(tp_pips, 10.0, places=5)
+        self.assertAlmostEqual(tp_pips, 6.0, places=5)
     
     def test_calculate_atr_stops_zero_atr(self):
         """Test fallback to config defaults when ATR is zero."""
@@ -184,13 +184,13 @@ class TestATRStopsCalculation(unittest.TestCase):
         sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
         
         # sl_price = 0.12 * 1.0 = 0.12
-        # tp_price = 0.12 * 2.5 = 0.30
+        # tp_price = 0.12 * 1.5 = 0.18
         # For EUR_JPY, pip_size = 0.01 (contains JPY)
         # sl_pips = 0.12 / 0.01 = 12.0
-        # tp_pips = 0.30 / 0.01 = 30.0
+        # tp_pips = 0.18 / 0.01 = 18.0
         
         self.assertAlmostEqual(sl_pips, 12.0, places=5)
-        self.assertAlmostEqual(tp_pips, 30.0, places=5)
+        self.assertAlmostEqual(tp_pips, 18.0, places=5)
     
     def test_pip_size_detection_various_instruments(self):
         """Test pip size detection for various instruments."""
@@ -816,12 +816,12 @@ class TestDynamicInstruments(unittest.TestCase):
         
         # pip_size = 0.1 (from pipLocation -1)
         # sl_price = 1.5 * 1.0 = 1.5
-        # tp_price = 1.5 * 2.5 = 3.75
+        # tp_price = 1.5 * 1.5 = 2.25
         # sl_pips = 1.5 / 0.1 = 15.0
-        # tp_pips = 3.75 / 0.1 = 37.5
+        # tp_pips = 2.25 / 0.1 = 22.5
         
         self.assertAlmostEqual(sl_pips, 15.0, places=5)
-        self.assertAlmostEqual(tp_pips, 37.5, places=5)
+        self.assertAlmostEqual(tp_pips, 22.5, places=5)
     
     def test_fallback_to_legacy_pip_logic(self):
         """Test fallback to legacy logic for uncached instruments."""
