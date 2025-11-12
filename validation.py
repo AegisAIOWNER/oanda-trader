@@ -28,9 +28,12 @@ class DataValidator:
         if df is None or df.empty:
             return False, f"No candle data received for {instrument}"
         
+        # Adjust minimum candles for instruments with limited historical data
+        effective_min = 1 if '10Y' in instrument else min_candles
+        
         # Check minimum candles
-        if len(df) < min_candles:
-            return False, f"Insufficient candles for {instrument}: {len(df)} < {min_candles}"
+        if len(df) < effective_min:
+            return False, f"Insufficient candles for {instrument}: {len(df)} < {effective_min}"
         
         # Check required columns
         required_columns = ['time', 'open', 'high', 'low', 'close', 'volume']
