@@ -10,7 +10,7 @@ ENVIRONMENT = os.getenv('OANDA_ENVIRONMENT', 'practice')  # 'practice' or 'live'
 # Scalability configs
 INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', 'NZD_USD', 'EUR_GBP', 'USD_CHF']  # Expanded list for dynamic scanning
 RATE_LIMIT_DELAY = 1.0 / 30  # 30 req/sec for practice
-MARGIN_BUFFER = 0.50  # Keep at least 50% margin available for single-trade strategy
+MARGIN_BUFFER = 0.0  # Use all available margin for single-trade strategy to maximize position size
 DEFAULT_UNITS = 5000  # Increased to force bigger base sizes for viable positions
 STRATEGY = 'advanced_scalp'  # New advanced scalping strategy
 
