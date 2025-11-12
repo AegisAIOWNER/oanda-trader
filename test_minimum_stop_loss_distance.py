@@ -39,7 +39,7 @@ class TestMinimumStopLossDistance(unittest.TestCase):
                         'minimumTradeSize': '1',
                         'maximumOrderUnits': '100000000',
                         'marginRate': 0.0333,
-                        'minimumTrailingStopDistance': '0.0005'
+                        'minimumTrailingStopDistance': '0.001'
                     },
                     'USD_JPY': {
                         'pipLocation': -2,
@@ -77,11 +77,11 @@ class TestMinimumStopLossDistance(unittest.TestCase):
         """Test that stop loss is adjusted when below minimum for EUR_USD."""
         instrument = 'EUR_USD'
         
-        # EUR_USD has pip size 0.0001, minimum trailing stop distance 0.0005
-        # 0.0005 / 0.0001 = 5 pips minimum
-        # Test with 3 pips, which should be adjusted to 5 pips
-        sl_pips = 3.0
-        tp_pips = 10.0
+        # EUR_USD has pip size 0.0001, minimum trailing stop distance 0.001
+        # 0.001 / 0.0001 = 10 pips minimum
+        # Test with 5 pips, which should be adjusted to 10 pips
+        sl_pips = 5.0
+        tp_pips = 20.0
         
         with patch.object(self.bot, '_rate_limited_request') as mock_request:
             with patch.object(self.bot, 'check_margin', return_value=True):
@@ -109,19 +109,19 @@ class TestMinimumStopLossDistance(unittest.TestCase):
                         self.assertIsNotNone(self.order_data)
                         sl_distance = float(self.order_data['order']['stopLossOnFill']['distance'])
                         
-                        # The adjusted SL should be at least the minimum (0.0005)
-                        self.assertGreaterEqual(sl_distance, 0.0005,
-                                              f"SL distance {sl_distance} is below minimum 0.0005")
+                        # The adjusted SL should be at least the minimum (0.001)
+                        self.assertGreaterEqual(sl_distance, 0.001,
+                                              f"SL distance {sl_distance} is below minimum 0.001")
     
     def test_stop_loss_no_adjustment_for_eur_usd_above_minimum(self):
         """Test that stop loss is NOT adjusted when already above minimum for EUR_USD."""
         instrument = 'EUR_USD'
         
-        # EUR_USD has pip size 0.0001, minimum trailing stop distance 0.0005
-        # 0.0005 / 0.0001 = 5 pips minimum
-        # Test with 10 pips, which should NOT be adjusted
-        sl_pips = 10.0
-        tp_pips = 20.0
+        # EUR_USD has pip size 0.0001, minimum trailing stop distance 0.001
+        # 0.001 / 0.0001 = 10 pips minimum
+        # Test with 15 pips, which should NOT be adjusted
+        sl_pips = 15.0
+        tp_pips = 30.0
         
         with patch.object(self.bot, '_rate_limited_request') as mock_request:
             with patch.object(self.bot, 'check_margin', return_value=True):
@@ -149,8 +149,8 @@ class TestMinimumStopLossDistance(unittest.TestCase):
                         self.assertIsNotNone(self.order_data)
                         sl_distance = float(self.order_data['order']['stopLossOnFill']['distance'])
                         
-                        # The SL should be approximately 10 pips (0.0010) with rounding
-                        expected_sl_distance = 10.0 * 0.0001  # 10 pips * pip size
+                        # The SL should be approximately 15 pips (0.0015) with rounding
+                        expected_sl_distance = 15.0 * 0.0001  # 15 pips * pip size
                         self.assertAlmostEqual(sl_distance, expected_sl_distance, places=5,
                                              msg=f"SL distance {sl_distance} differs from expected {expected_sl_distance}")
     
