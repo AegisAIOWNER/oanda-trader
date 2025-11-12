@@ -252,7 +252,10 @@ class OandaTradingBot:
                 self.performance_monitor.record_api_call(success, duration, error)
 
     def _fetch_and_cache_instruments(self):
-        """Fetch all tradable instruments from Oanda API and cache their metadata."""
+        """Fetch all tradable instruments from Oanda API and cache their metadata.
+        
+        This includes minimumTrailingStopDistance to prevent STOP_LOSS_ON_FILL_LOSS errors.
+        """
         try:
             r = accounts.AccountInstruments(accountID=self.account_id)
             response = self._rate_limited_request(r)
@@ -272,7 +275,8 @@ class OandaTradingBot:
                         'tradeUnitsPrecision': inst.get('tradeUnitsPrecision', 0),
                         'minimumTradeSize': inst.get('minimumTradeSize', '1'),
                         'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000'),
-                        'marginRate': inst.get('marginRate', 0.0333)
+                        'marginRate': inst.get('marginRate', 0.0333),
+                        'minimumTrailingStopDistance': inst.get('minimumTrailingStopDistance', '0.0005')
                     }
             
             self.instruments_cache_time = datetime.now()
@@ -295,7 +299,8 @@ class OandaTradingBot:
                     'tradeUnitsPrecision': 0,
                     'minimumTradeSize': '1',
                     'maximumOrderUnits': '100000000',
-                    'marginRate': 0.0333  # Default ~30:1 leverage
+                    'marginRate': 0.0333,  # Default ~30:1 leverage
+                    'minimumTrailingStopDistance': '0.01' if 'JPY' in inst else '0.0005'
                 }
             self.instruments_cache_time = datetime.now()
     
@@ -339,7 +344,8 @@ class OandaTradingBot:
                             'tradeUnitsPrecision': inst.get('tradeUnitsPrecision', 0),
                             'minimumTradeSize': inst.get('minimumTradeSize', '1'),
                             'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000'),
-                            'marginRate': inst.get('marginRate', 0.0333)
+                            'marginRate': inst.get('marginRate', 0.0333),
+                            'minimumTrailingStopDistance': inst.get('minimumTrailingStopDistance', '0.0005')
                         }
                         pip_location = inst.get('pipLocation', -4)
                         return 10 ** pip_location
@@ -598,6 +604,31 @@ class OandaTradingBot:
             if self.performance_monitor:
                 self.performance_monitor.record_trade_attempt(False, f"Risk check failed: {reason}")
             return None
+        
+        # Check and adjust stop loss distance to meet Oanda's minimum trailing stop distance
+        if sl_pips:
+            # Get minimum trailing stop distance for this instrument
+            inst_data = self.instruments_cache.get(instrument, {})
+            min_trailing_stop_distance = float(inst_data.get('minimumTrailingStopDistance', 0.0005))
+            
+            # Convert stop loss pips to price distance
+            pip_size = self._get_instrument_pip_size(instrument)
+            sl_price_distance = sl_pips * pip_size
+            
+            # Check if stop loss distance is below minimum
+            if sl_price_distance < min_trailing_stop_distance:
+                original_sl_pips = sl_pips
+                # Adjust stop loss distance to meet minimum requirement
+                sl_pips = min_trailing_stop_distance / pip_size
+                logging.info(f"Adjusted stop loss for {instrument} from {original_sl_pips:.4f} pips "
+                           f"({sl_price_distance:.5f}) to {sl_pips:.4f} pips ({min_trailing_stop_distance:.5f}) "
+                           f"to meet minimum trailing stop distance requirement")
+                if self.structured_logger:
+                    self.structured_logger.log_validation_error(
+                        "stop_loss_adjustment",
+                        f"SL adjusted from {original_sl_pips:.4f} to {sl_pips:.4f} pips",
+                        instrument=instrument
+                    )
         
         data = {
             'order': {
