@@ -8,20 +8,20 @@ ACCOUNT_ID = os.getenv('OANDA_ACCOUNT_ID', '101-004-31357839-001')
 ENVIRONMENT = os.getenv('OANDA_ENVIRONMENT', 'practice')  # 'practice' or 'live'
 
 # Scalability configs
-INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', 'NZD_USD', 'EUR_GBP', 'USD_CHF']  # Expanded list for dynamic scanning
+INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', 'NZD_USD', 'EUR_GBP', 'USD_CHF']  # Keep major FX pairs only
 
 # Curated Instruments Filter (for scan-time filtering only)
 CURATED_INSTRUMENTS = ["EUR_USD", "GBP_USD", "USD_JPY", "USD_CAD", "AUD_USD", "NZD_USD", "EUR_GBP", "USD_CHF"]
 ENABLE_CURATED_FILTER = True  # Enable curated filter at scan-time (test-safe, no-op when no overlap)
 
 RATE_LIMIT_DELAY = 1.0 / 30  # 30 req/sec for practice
-MARGIN_BUFFER = 0.0  # Use all available margin for single-trade strategy to maximize position size
-DEFAULT_UNITS = 5000  # Increased to force bigger base sizes for viable positions
+MARGIN_BUFFER = 0.05  # Small buffer for small balance (was 0.0)
+DEFAULT_UNITS = 100  # Small default for testing (was 5000)
 STRATEGY = 'advanced_scalp'  # New advanced scalping strategy
 
 # For scalping
 GRANULARITY = 'M5'  # 5-minute candles for scalping
-CHECK_INTERVAL = 120  # 2 minutes between checks (faster signal detection)
+CHECK_INTERVAL = 60  # Faster cycles for more opportunities (was 120)
 
 # Risk management
 STOP_LOSS_PIPS = 5  # Tighter stops for scalping (will be overridden by ATR-based stops)
@@ -29,11 +29,11 @@ TAKE_PROFIT_PIPS = 10  # Smaller targets (will be overridden by ATR-based target
 MAX_DAILY_LOSS_PERCENT = 6.0  # Daily stop
 
 # Advanced scalping settings
-MAX_PAIRS_TO_SCAN = 25  # Maximum number of pairs to scan for signals
-CONFIDENCE_THRESHOLD = 0.7  # Minimum confidence score to place a trade (0.0 to 1.0)
+MAX_PAIRS_TO_SCAN = 8  # Maximum number of pairs to scan for signals
+CONFIDENCE_THRESHOLD = 0.6  # Minimum confidence score to place a trade (0.0 to 1.0)
 ATR_PERIOD = 14  # Period for ATR calculation
-ATR_STOP_MULTIPLIER = 1.0  # Stop loss multiplier for better risk/reward
-ATR_PROFIT_MULTIPLIER = 2.5  # Take profit multiplier for better risk/reward
+ATR_STOP_MULTIPLIER = 0.8  # Stop loss multiplier for better risk/reward
+ATR_PROFIT_MULTIPLIER = 2.0  # Take profit multiplier for better risk/reward
 VOLUME_MA_PERIOD = 20  # Period for volume moving average
 MIN_VOLUME_RATIO = 1.2  # Minimum volume ratio for confirmation (current volume / avg volume)
 
@@ -45,48 +45,41 @@ ML_AUTO_TRAIN_INTERVAL = 10  # Automatically retrain model after N new trades
 
 # Position Sizing settings
 POSITION_SIZING_METHOD = 'fixed_percentage'  # 'fixed_percentage' or 'kelly_criterion'
-RISK_PER_TRADE = 0.01  # 1% risk per trade for compounding small wins
+RISK_PER_TRADE = 0.05  # 5% risk per trade for compounding small wins
 KELLY_FRACTION = 0.25  # Use 25% of Kelly Criterion (quarter Kelly for safety)
-MIN_TRADE_VALUE = 1.50  # Minimum trade value in account currency ($1-2 range, using $1.50 as midpoint) to meet Oanda margin requirements
+MIN_TRADE_VALUE = 1.0  # Minimum trade value in account currency ($1-2 range, using $1.50 as midpoint) to meet broker margin requirements
 
 # Multi-timeframe settings
-ENABLE_MULTIFRAME = True  # Enable multi-timeframe confirmation
-PRIMARY_TIMEFRAME = 'M5'  # Primary timeframe for signals
-CONFIRMATION_TIMEFRAME = 'H1'  # Higher timeframe for confirmation
+ENABLE_MULTIFRAME = False  # Enable multi-timeframe confirmation
 
 # Adaptive Threshold settings (autonomous self-optimization)
 ENABLE_ADAPTIVE_THRESHOLD = True  # Enable dynamic threshold adjustment
-ADAPTIVE_MIN_THRESHOLD = 0.5  # Minimum allowed threshold (safety floor)
+ADAPTIVE_MIN_THRESHOLD = 0.4  # Minimum allowed threshold (safety floor)
 ADAPTIVE_MAX_THRESHOLD = 0.95  # Maximum allowed threshold (safety ceiling)
-ADAPTIVE_NO_SIGNAL_CYCLES = 5  # Cycles without signals before lowering threshold
-ADAPTIVE_ADJUSTMENT_STEP = 0.02  # Threshold adjustment step size (2%)
-ADAPTIVE_MIN_TRADES_FOR_ADJUSTMENT = 5  # Minimum trades before performance-based adjustments
+ADAPTIVE_NO_SIGNAL_CYCLES = 3  # Cycles without signals before lowering threshold
+ADAPTIVE_ADJUSTMENT_STEP = 0.05  # Threshold adjustment step size (2%)
+ADAPTIVE_MIN_TRADES_FOR_ADJUSTMENT = 3  # Minimum trades before performance-based adjustments
 
 # Volatility Detection settings (adaptive strategy adjustments)
-ENABLE_VOLATILITY_DETECTION = True  # Enable market volatility detection
-VOLATILITY_LOW_THRESHOLD = 0.0005  # ATR threshold for low volatility (e.g., 5 pips for most pairs)
-VOLATILITY_NORMAL_THRESHOLD = 0.0015  # ATR threshold for normal/high volatility (e.g., 15 pips)
-VOLATILITY_ADJUSTMENT_MODE = 'aggressive_threshold'  # How to adjust: 'aggressive_threshold', 'widen_stops', 'skip_cycles', 'adaptive' (all)
-VOLATILITY_ATR_WINDOW = 10  # Number of cycles to average ATR for volatility detection
+ENABLE_VOLATILITY_DETECTION = False  # Enable market volatility detection
 
 # Dynamic Instrument Selection settings
-ENABLE_DYNAMIC_INSTRUMENTS = True  # Enable dynamic instrument selection from all available instruments
-DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before refreshing
+ENABLE_DYNAMIC_INSTRUMENTS = False  # Enable dynamic instrument selection from all available instruments
 
 # Affordability Pre-filter settings
-ENABLE_AFFORDABILITY_FILTER = True  # Enable affordability check to skip instruments with insufficient margin
+ENABLE_AFFORDABILITY_FILTER = False  # Enable affordability check to skip instruments with insufficient margin
 
 # Auto-scaling Position Sizing settings
 ENABLE_AUTO_SCALE_UNITS = True  # Enable auto-scaling position sizing to fit available margin and risk
-AUTO_SCALE_MARGIN_BUFFER = MARGIN_BUFFER  # Margin buffer for auto-scaling (reuse existing buffer by default)
-AUTO_SCALE_MIN_UNITS = None  # Optional global minimum units; if None, use instrument minimumTradeSize
+AUTO_SCALE_MARGIN_BUFFER = 0.05  # Margin buffer for auto-scaling (reuse existing buffer by default)
+AUTO_SCALE_MIN_UNITS = 10  # Optional global minimum units; if None, use instrument minimumTradeSize
 
 # Enhanced Risk Management settings (future-proofing)
-MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions
-MAX_RISK_PER_TRADE = 0.5  # Maximum risk per trade (50% of balance) - increased for focused single-trade strategy on high-confidence signals like USB05Y_USD
-MAX_TOTAL_RISK = 0.15  # Maximum total risk across all positions (15% of balance) - adjusted for higher individual risk
-MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments (same base currency)
-MAX_UNITS_PER_INSTRUMENT = 100000  # Maximum units per instrument
+MAX_OPEN_POSITIONS = 1  # Maximum concurrent open positions
+MAX_RISK_PER_TRADE = 0.10  # Maximum risk per trade (50% of balance) - increased for focused single-trade strategy on high-confidence signals like USB05Y_USD
+MAX_TOTAL_RISK = 0.10  # Maximum total risk across all positions (15% of balance) - adjusted for higher individual risk
+MAX_CORRELATION_POSITIONS = 1  # Maximum positions in correlated instruments (same base currency)
+MAX_UNITS_PER_INSTRUMENT = 1000  # Maximum units per instrument
 MAX_SLIPPAGE_PIPS = 2.0  # Maximum acceptable slippage in pips
 
 # Input Validation settings
