@@ -399,8 +399,46 @@ class OandaTradingBot:
         """
         # Get instrument metadata from cache
         inst_data = self.instruments_cache.get(instrument, {})
-        min_units = float(inst_data.get('minimumTradeSize', '1'))
-        margin_rate = float(inst_data.get('marginRate', 0.0333))  # Default ~30:1 leverage
+        
+        # Safely parse string values from instrument metadata
+        try:
+            min_units = float(inst_data.get('minimumTradeSize', '1'))
+        except (ValueError, TypeError):
+            min_units = 1.0
+            logging.debug(f"Invalid minimumTradeSize for {instrument}, using default 1.0")
+        
+        try:
+            margin_rate = float(inst_data.get('marginRate', 0.0333))
+        except (ValueError, TypeError):
+            margin_rate = 0.0333  # Default ~30:1 leverage
+            logging.debug(f"Invalid marginRate for {instrument}, using default 0.0333")
+        
+        # Safely parse other numeric inputs
+        try:
+            current_price = float(current_price)
+        except (ValueError, TypeError):
+            logging.warning(f"Invalid current_price for {instrument}: {current_price}")
+            return False, f"Invalid price: {current_price}"
+        
+        try:
+            available_margin = float(available_margin)
+        except (ValueError, TypeError):
+            logging.warning(f"Invalid available_margin for {instrument}: {available_margin}")
+            return False, f"Invalid available margin: {available_margin}"
+        
+        try:
+            margin_buffer = float(margin_buffer)
+        except (ValueError, TypeError):
+            margin_buffer = MARGIN_BUFFER
+            logging.debug(f"Invalid margin_buffer for {instrument}, using default {MARGIN_BUFFER}")
+        
+        # Validate values are positive
+        if current_price <= 0:
+            return False, f"Invalid price: {current_price}"
+        if available_margin < 0:
+            return False, f"Invalid available margin: {available_margin}"
+        if margin_rate <= 0:
+            return False, f"Invalid margin rate: {margin_rate}"
         
         # Calculate required margin for minimum trade size
         # Formula: required_margin = min_units * current_price * margin_rate
