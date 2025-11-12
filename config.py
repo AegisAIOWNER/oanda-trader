@@ -116,7 +116,7 @@ ENABLE_STRUCTURED_LOGGING = True  # Enable structured logging with context
 LOG_LEVEL = 'INFO'  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 # P&L Analytics and Reporting
-ENABLE_COMPREHIVE_ANALYTICS = True  # Enable comprehensive P&L analytics
+ENABLE_COMPREHENSIVE_ANALYTICS = True  # Enable comprehensive P&L analytics
 ANALYTICS_REPORT_INTERVAL = 3600  # Generate analytics report every N seconds (1 hour)
 ANALYTICS_MIN_TRADES_FOR_SUGGESTIONS = 5  # Minimum trades before generating suggestions
 ANALYTICS_DRAWDOWN_THRESHOLD = 0.10  # Alert if drawdown exceeds 10%
