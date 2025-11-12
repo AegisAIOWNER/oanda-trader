@@ -116,14 +116,15 @@ class TestATRStopsCalculation(unittest.TestCase):
         
         sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
         
-        # With ATR_STOP_MULTIPLIER = 1.0 and ATR_PROFIT_MULTIPLIER = 1.5
-        # sl_price = 0.0002 * 1.0 = 0.0002
+        # With ATR_STOP_MULTIPLIER = 0.5 and ATR_PROFIT_MULTIPLIER = 1.5
+        # sl_price = 0.0002 * 0.5 = 0.0001
         # tp_price = 0.0002 * 1.5 = 0.0003
         # For EUR_USD, pip_size = 0.0001
-        # sl_pips = 0.0002 / 0.0001 = 2.0
+        # sl_pips = 0.0001 / 0.0001 = 1.0
+        # BUT: minimum 10 pips is enforced, so sl_pips = 10.0
         # tp_pips = 0.0003 / 0.0001 = 3.0
         
-        self.assertAlmostEqual(sl_pips, 2.0, places=5)
+        self.assertAlmostEqual(sl_pips, 10.0, places=5)  # Enforced minimum
         self.assertAlmostEqual(tp_pips, 3.0, places=5)
     
     def test_calculate_atr_stops_usd_jpy(self):
@@ -134,14 +135,15 @@ class TestATRStopsCalculation(unittest.TestCase):
         
         sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
         
-        # With ATR_STOP_MULTIPLIER = 1.0 and ATR_PROFIT_MULTIPLIER = 1.5
-        # sl_price = 0.15 * 1.0 = 0.15
+        # With ATR_STOP_MULTIPLIER = 0.5 and ATR_PROFIT_MULTIPLIER = 1.5
+        # sl_price = 0.15 * 0.5 = 0.075
         # tp_price = 0.15 * 1.5 = 0.225
         # For USD_JPY, pip_size = 0.01
-        # sl_pips = 0.15 / 0.01 = 15.0
+        # sl_pips = 0.075 / 0.01 = 7.5
+        # BUT: minimum 10 pips is enforced, so sl_pips = 10.0
         # tp_pips = 0.225 / 0.01 = 22.5
         
-        self.assertAlmostEqual(sl_pips, 15.0, places=5)
+        self.assertAlmostEqual(sl_pips, 10.0, places=5)  # Enforced minimum
         self.assertAlmostEqual(tp_pips, 22.5, places=5)
     
     def test_calculate_atr_stops_gbp_usd(self):
@@ -152,13 +154,15 @@ class TestATRStopsCalculation(unittest.TestCase):
         
         sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
         
-        # sl_price = 0.0004 * 1.0 = 0.0004
+        # With ATR_STOP_MULTIPLIER = 0.5 and ATR_PROFIT_MULTIPLIER = 1.5
+        # sl_price = 0.0004 * 0.5 = 0.0002
         # tp_price = 0.0004 * 1.5 = 0.0006
         # For GBP_USD, pip_size = 0.0001
-        # sl_pips = 0.0004 / 0.0001 = 4.0
+        # sl_pips = 0.0002 / 0.0001 = 2.0
+        # BUT: minimum 10 pips is enforced, so sl_pips = 10.0
         # tp_pips = 0.0006 / 0.0001 = 6.0
         
-        self.assertAlmostEqual(sl_pips, 4.0, places=5)
+        self.assertAlmostEqual(sl_pips, 10.0, places=5)  # Enforced minimum
         self.assertAlmostEqual(tp_pips, 6.0, places=5)
     
     def test_calculate_atr_stops_zero_atr(self):
@@ -183,13 +187,15 @@ class TestATRStopsCalculation(unittest.TestCase):
         
         sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, signal, instrument)
         
-        # sl_price = 0.12 * 1.0 = 0.12
+        # With ATR_STOP_MULTIPLIER = 0.5 and ATR_PROFIT_MULTIPLIER = 1.5
+        # sl_price = 0.12 * 0.5 = 0.06
         # tp_price = 0.12 * 1.5 = 0.18
         # For EUR_JPY, pip_size = 0.01 (contains JPY)
-        # sl_pips = 0.12 / 0.01 = 12.0
+        # sl_pips = 0.06 / 0.01 = 6.0
+        # BUT: minimum 10 pips is enforced, so sl_pips = 10.0
         # tp_pips = 0.18 / 0.01 = 18.0
         
-        self.assertAlmostEqual(sl_pips, 12.0, places=5)
+        self.assertAlmostEqual(sl_pips, 10.0, places=5)  # Enforced minimum
         self.assertAlmostEqual(tp_pips, 18.0, places=5)
     
     def test_pip_size_detection_various_instruments(self):
@@ -200,9 +206,11 @@ class TestATRStopsCalculation(unittest.TestCase):
         
         for instrument in standard_pairs:
             sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, 'BUY', instrument)
-            # sl_price = 0.0001 * 1.0 = 0.0001
-            # sl_pips = 0.0001 / 0.0001 = 1.0
-            self.assertAlmostEqual(sl_pips, 1.0, places=5, 
+            # With ATR_STOP_MULTIPLIER = 0.5:
+            # sl_price = 0.0001 * 0.5 = 0.00005
+            # sl_pips = 0.00005 / 0.0001 = 0.5
+            # BUT: minimum 10 pips is enforced, so sl_pips = 10.0
+            self.assertAlmostEqual(sl_pips, 10.0, places=5, 
                                  msg=f"Failed for {instrument}")
         
         # JPY pairs (0.01 pip size)
@@ -211,9 +219,11 @@ class TestATRStopsCalculation(unittest.TestCase):
         
         for instrument in jpy_pairs:
             sl_pips, tp_pips = self.bot.calculate_atr_stops(atr, 'BUY', instrument)
-            # sl_price = 0.01 * 1.0 = 0.01
-            # sl_pips = 0.01 / 0.01 = 1.0
-            self.assertAlmostEqual(sl_pips, 1.0, places=5,
+            # With ATR_STOP_MULTIPLIER = 0.5:
+            # sl_price = 0.01 * 0.5 = 0.005
+            # sl_pips = 0.005 / 0.01 = 0.5
+            # BUT: minimum 10 pips is enforced, so sl_pips = 10.0
+            self.assertAlmostEqual(sl_pips, 10.0, places=5,
                                  msg=f"Failed for {instrument}")
     
     def test_take_profit_cap_at_50_pips(self):
@@ -269,6 +279,73 @@ class TestATRStopsCalculation(unittest.TestCase):
         
         # TP should be exactly 50 pips (not capped, naturally at limit)
         self.assertEqual(tp_pips, 50, msg="TP should be 50 pips when naturally at limit")
+    
+    def test_minimum_stop_loss_10_pips_enforcement(self):
+        """Test that stop loss is enforced to be at least 10 pips."""
+        # Test case 1: Very small ATR that would produce less than 10 pips SL
+        atr = 0.0001  # 1 pip worth of ATR for EUR_USD
+        signal = 'BUY'
+        instrument = 'EUR_USD'
+        stop_multiplier = 0.5  # Would result in 0.5 pips without enforcement
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(
+            atr, signal, instrument,
+            stop_multiplier=stop_multiplier
+        )
+        
+        # SL should be enforced to minimum 10 pips
+        self.assertGreaterEqual(sl_pips, 10.0, msg="SL should be at least 10 pips")
+        self.assertEqual(sl_pips, 10.0, msg="SL should be exactly 10 pips when below minimum")
+        
+        # Test case 2: ATR that would naturally produce exactly 10 pips
+        atr = 0.0010  # 10 pips for EUR_USD
+        stop_multiplier = 1.0  # Results in exactly 10 pips
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(
+            atr, signal, instrument,
+            stop_multiplier=stop_multiplier
+        )
+        
+        # SL should be exactly 10 pips (not adjusted)
+        self.assertAlmostEqual(sl_pips, 10.0, places=5, msg="SL should be 10 pips when naturally at minimum")
+        
+        # Test case 3: ATR that produces more than 10 pips (should not be adjusted)
+        atr = 0.0020  # 20 pips for EUR_USD
+        stop_multiplier = 1.0  # Results in 20 pips
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(
+            atr, signal, instrument,
+            stop_multiplier=stop_multiplier
+        )
+        
+        # SL should remain at calculated value (20 pips)
+        self.assertAlmostEqual(sl_pips, 20.0, places=5, msg="SL should not be adjusted when above minimum")
+        
+        # Test case 4: USD_JPY with very small ATR
+        atr = 0.005  # 0.5 pips for USD_JPY
+        instrument = 'USD_JPY'
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(
+            atr, signal, instrument,
+            stop_multiplier=stop_multiplier
+        )
+        
+        # SL should be enforced to minimum 10 pips
+        self.assertGreaterEqual(sl_pips, 10.0, msg="SL should be at least 10 pips for USD_JPY")
+        self.assertEqual(sl_pips, 10.0, msg="SL should be exactly 10 pips when below minimum for USD_JPY")
+        
+        # Test case 5: Edge case with ATR exactly producing 9.99 pips
+        atr = 0.000999  # 9.99 pips for EUR_USD
+        instrument = 'EUR_USD'
+        stop_multiplier = 1.0
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(
+            atr, signal, instrument,
+            stop_multiplier=stop_multiplier
+        )
+        
+        # SL should be adjusted to 10 pips
+        self.assertGreaterEqual(sl_pips, 10.0, msg="SL should be at least 10 pips even at 9.99")
 
 
 class TestPositionSizing(unittest.TestCase):

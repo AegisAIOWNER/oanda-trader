@@ -910,6 +910,9 @@ class OandaTradingBot:
                            confidence=None):
         """Calculate ATR-based stop loss and take profit in pips with confidence adjustments.
         
+        Enforces a minimum stop loss distance of 10 pips to prevent STOP_LOSS_ON_FILL_LOSS errors,
+        regardless of ATR calculations.
+        
         Args:
             atr: ATR value in price units
             signal: Trading signal ('BUY' or 'SELL')
@@ -957,6 +960,13 @@ class OandaTradingBot:
             # Convert price distances to pips
             sl_pips = sl_price / pip_size
             tp_pips = tp_price / pip_size
+            
+            # Enforce minimum stop loss distance of 10 pips to prevent STOP_LOSS_ON_FILL_LOSS errors
+            MINIMUM_STOP_LOSS_PIPS = 10.0
+            if sl_pips < MINIMUM_STOP_LOSS_PIPS:
+                original_sl_pips = sl_pips
+                sl_pips = MINIMUM_STOP_LOSS_PIPS
+                logging.info(f"Stop loss adjusted from {original_sl_pips:.2f} pips to minimum {MINIMUM_STOP_LOSS_PIPS} pips for {instrument}")
             
             # Cap take profit at 50 pips to prevent 'Take profit out of reasonable range' errors
             if tp_pips > 50:
