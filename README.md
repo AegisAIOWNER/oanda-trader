@@ -44,6 +44,14 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 - **Confidence Adjustment**: Position size scales with signal confidence
 - **Dynamic Calculation**: Adapts to account balance and market volatility
 - **Minimum Position Size Enforcement**: Automatically enforces minimum trade value ($1-2) to meet broker margin requirements, overriding risk-based calculations when needed while keeping stops and limits intact
+- **Auto-Scaling Units (NEW!)**: 
+  - Automatically scales position size to fit available margin and risk limits
+  - Computes maximum units satisfying both margin constraints and risk management rules
+  - Respects broker minimum trade size and instrument precision requirements
+  - Guards against positions below minimum trade value
+  - Skips trades that cannot meet all constraints with clear logging
+  - Enable with `ENABLE_AUTO_SCALE_UNITS = True` in config
+  - Tune with `AUTO_SCALE_MARGIN_BUFFER` and `AUTO_SCALE_MIN_UNITS` settings
 
 ### Multi-Timeframe Analysis
 - **H1 Confirmation**: Higher timeframe (1-hour) confirms M5 signals

@@ -153,9 +153,124 @@ class PositionSizer:
         
         return units
     
+    def calculate_auto_scaled_units(self, balance, stop_loss_pips, pip_value, 
+                                     available_margin, current_price, margin_rate,
+                                     minimum_trade_size, trade_units_precision,
+                                     maximum_order_units, confidence=1.0,
+                                     margin_buffer=0.0, min_units_override=None,
+                                     max_units_per_instrument=100000):
+        """
+        Calculate auto-scaled position size that fits both margin and risk constraints.
+        
+        This method computes the maximum units that satisfy:
+        - Available margin constraints (after buffer)
+        - Risk-based position sizing
+        - Broker minimum trade size
+        - Instrument precision requirements
+        - Maximum order units
+        
+        Args:
+            balance: Account balance
+            stop_loss_pips: Stop loss distance in pips
+            pip_value: Value of 1 pip for the instrument
+            available_margin: Available margin from API
+            current_price: Current instrument price
+            margin_rate: Margin rate for the instrument (e.g., 0.0333 for ~30:1 leverage)
+            minimum_trade_size: Broker minimum trade size for this instrument
+            trade_units_precision: Decimal precision for units (0 = integer)
+            maximum_order_units: Broker maximum order units for this instrument
+            confidence: Signal confidence (0.0 to 1.0)
+            margin_buffer: Fraction of available margin to keep as buffer (0.0-1.0)
+            min_units_override: Override for minimum units (None = use minimum_trade_size)
+            max_units_per_instrument: Portfolio max units per instrument
+            
+        Returns:
+            Tuple of (units, risk_percentage, reason)
+            - units: Number of units to trade (0 if constraints not met)
+            - risk_percentage: Actual risk as percentage of balance
+            - reason: Explanation of sizing decision or skip reason
+        """
+        # a) Compute effective available margin
+        effective_available_margin = max(0.0, available_margin * (1.0 - margin_buffer))
+        
+        # b) Calculate required margin per unit
+        # Use fallback margin rate if missing
+        if margin_rate is None or margin_rate <= 0:
+            margin_rate = 0.0333  # Conservative default (~30:1 leverage)
+            logging.debug(f"Using fallback margin_rate: {margin_rate}")
+        
+        required_margin_per_unit = current_price * margin_rate
+        
+        # c) Calculate units by margin
+        if required_margin_per_unit > 0:
+            units_by_margin = int(effective_available_margin / required_margin_per_unit)
+        else:
+            units_by_margin = 0
+            logging.warning(f"Invalid required_margin_per_unit: {required_margin_per_unit}")
+        
+        # d) Calculate units by risk
+        risk_amount = balance * self.risk_per_trade * confidence
+        risk_per_unit = stop_loss_pips * pip_value
+        
+        if risk_per_unit > 0:
+            units_by_risk = int(risk_amount / risk_per_unit)
+        else:
+            units_by_risk = 0
+            logging.debug(f"Risk per unit is 0 or negative: {risk_per_unit}")
+        
+        # e) Calculate candidate units (take minimum of all constraints)
+        candidate_units = min(
+            units_by_margin,
+            units_by_risk,
+            maximum_order_units,
+            max_units_per_instrument
+        )
+        
+        # f) Round down to trade units precision
+        if trade_units_precision == 0:
+            candidate_units = int(candidate_units)
+        else:
+            # For non-zero precision, round to appropriate decimal places
+            multiplier = 10 ** trade_units_precision
+            candidate_units = int(candidate_units * multiplier) / multiplier
+        
+        # Determine effective minimum units
+        effective_min_units = min_units_override if min_units_override is not None else minimum_trade_size
+        
+        # Check if candidate meets minimum trade size
+        if candidate_units < effective_min_units:
+            reason = f"Candidate units {candidate_units} < minimum {effective_min_units}"
+            logging.info(f"Auto-scale skip: {reason}")
+            return 0, 0.0, reason
+        
+        # Check if candidate meets minimum trade value
+        trade_value = candidate_units * current_price
+        if trade_value < self.min_trade_value:
+            reason = f"Trade value ${trade_value:.2f} < minimum ${self.min_trade_value:.2f}"
+            logging.info(f"Auto-scale skip: {reason}")
+            return 0, 0.0, reason
+        
+        # Calculate actual risk percentage
+        actual_risk_amount = candidate_units * stop_loss_pips * pip_value
+        risk_pct = actual_risk_amount / balance if balance > 0 else 0.0
+        
+        # Log sizing details
+        logging.debug(f"Auto-scale sizing: units_by_margin={units_by_margin}, "
+                     f"units_by_risk={units_by_risk}, final_units={candidate_units}, "
+                     f"minimum_trade_size={effective_min_units}, "
+                     f"effective_available_margin={effective_available_margin:.2f}")
+        
+        reason = f"Scaled to {candidate_units} units (margin: {units_by_margin}, risk: {units_by_risk})"
+        
+        return candidate_units, risk_pct, reason
+    
     def calculate_position_size(self, balance, stop_loss_pips, pip_value=10, 
                                performance_metrics=None, confidence=1.0, 
-                               available_margin=None, current_price=None, margin_buffer=0.50):
+                               available_margin=None, current_price=None, margin_buffer=0.50,
+                               enable_auto_scale=False, margin_rate=None,
+                               minimum_trade_size=1, trade_units_precision=0,
+                               maximum_order_units=100000000, auto_scale_margin_buffer=None,
+                               auto_scale_min_units=None, max_units_per_instrument=100000):
         """
         Calculate position size based on configured method.
         
@@ -168,10 +283,47 @@ class PositionSizer:
             available_margin: Optional available margin from API (for margin-based sizing)
             current_price: Optional current instrument price (for margin-based sizing)
             margin_buffer: Margin buffer to maintain (default 0.50 = 50%)
+            enable_auto_scale: Enable auto-scaling position sizing
+            margin_rate: Margin rate for the instrument (for auto-scaling)
+            minimum_trade_size: Broker minimum trade size (for auto-scaling)
+            trade_units_precision: Decimal precision for units (for auto-scaling)
+            maximum_order_units: Broker maximum order units (for auto-scaling)
+            auto_scale_margin_buffer: Margin buffer for auto-scaling (overrides margin_buffer if set)
+            auto_scale_min_units: Minimum units override for auto-scaling
+            max_units_per_instrument: Portfolio max units per instrument
             
         Returns:
-            Tuple of (units, risk_percentage)
+            Tuple of (units, risk_percentage) or (units, risk_percentage, reason) if auto-scaling
         """
+        # Use auto-scaling if enabled and all required parameters are provided
+        if enable_auto_scale and available_margin is not None and current_price is not None:
+            logging.info("Using auto-scaling position sizing")
+            
+            # Use auto_scale_margin_buffer if provided, otherwise use margin_buffer
+            effective_margin_buffer = auto_scale_margin_buffer if auto_scale_margin_buffer is not None else margin_buffer
+            
+            units, risk_pct, reason = self.calculate_auto_scaled_units(
+                balance=balance,
+                stop_loss_pips=stop_loss_pips,
+                pip_value=pip_value,
+                available_margin=available_margin,
+                current_price=current_price,
+                margin_rate=margin_rate,
+                minimum_trade_size=minimum_trade_size,
+                trade_units_precision=trade_units_precision,
+                maximum_order_units=maximum_order_units,
+                confidence=confidence,
+                margin_buffer=effective_margin_buffer,
+                min_units_override=auto_scale_min_units,
+                max_units_per_instrument=max_units_per_instrument
+            )
+            
+            logging.info(f"Auto-scaled position sizing: {units} units "
+                        f"(risk: {risk_pct*100:.2f}% of balance) - {reason}")
+            
+            # Return tuple with reason for auto-scaling
+            return units, risk_pct, reason
+        
         # If available_margin and current_price are provided, use margin-based sizing
         # This takes priority over other methods to prevent INSUFFICIENT_MARGIN errors
         if available_margin is not None and current_price is not None:
