@@ -10,7 +10,7 @@ ENVIRONMENT = os.getenv('OANDA_ENVIRONMENT', 'practice')  # 'practice' or 'live'
 # Scalability configs
 INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', 'NZD_USD', 'EUR_GBP', 'USD_CHF']  # Expanded list for dynamic scanning
 RATE_LIMIT_DELAY = 1.0 / 30  # 30 req/sec for practice
-MARGIN_BUFFER = 0.05  # Reduced to free up more capital for trades
+MARGIN_BUFFER = 0.50  # Keep at least 50% margin available for single-trade strategy
 DEFAULT_UNITS = 5000  # Increased to force bigger base sizes for viable positions
 STRATEGY = 'advanced_scalp'  # New advanced scalping strategy
 
@@ -69,7 +69,7 @@ ENABLE_DYNAMIC_INSTRUMENTS = True  # Enable dynamic instrument selection from al
 DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before refreshing
 
 # Enhanced Risk Management settings (future-proofing)
-MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions
+MAX_OPEN_POSITIONS = 1  # Maximum concurrent open positions (single-trade strategy)
 MAX_RISK_PER_TRADE = 0.05  # Maximum risk per trade (5% of balance) - increased for volatile pairs like EU50_EUR
 MAX_TOTAL_RISK = 0.15  # Maximum total risk across all positions (15% of balance) - adjusted for higher individual risk
 MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments (same base currency)
@@ -120,3 +120,10 @@ ENABLE_COMPREHENSIVE_ANALYTICS = True  # Enable comprehensive P&L analytics
 ANALYTICS_REPORT_INTERVAL = 3600  # Generate analytics report every N seconds (1 hour)
 ANALYTICS_MIN_TRADES_FOR_SUGGESTIONS = 5  # Minimum trades before generating suggestions
 ANALYTICS_DRAWDOWN_THRESHOLD = 0.10  # Alert if drawdown exceeds 10%
+
+# Single-Trade Strategy settings
+HIGH_CONFIDENCE_THRESHOLD = 0.8  # Threshold for high confidence signals
+HIGH_CONFIDENCE_SL_MULTIPLIER = 1.5  # Multiplier to loosen stop loss for high confidence upward signals
+ENABLE_PERSISTENT_PAIRS = True  # Enable persistent pair list across cycles
+PERSISTENT_PAIRS_FILE = 'data/persistent_pairs.json'  # File to store persistent pairs
+PAIR_REQUALIFICATION_INTERVAL = 300  # Seconds between pair qualification checks (5 minutes)
