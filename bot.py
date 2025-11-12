@@ -271,7 +271,8 @@ class OandaTradingBot:
                         'displayPrecision': inst.get('displayPrecision', 5),
                         'tradeUnitsPrecision': inst.get('tradeUnitsPrecision', 0),
                         'minimumTradeSize': inst.get('minimumTradeSize', '1'),
-                        'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000')
+                        'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000'),
+                        'marginRate': inst.get('marginRate', 0.0333)
                     }
             
             self.instruments_cache_time = datetime.now()
@@ -293,7 +294,8 @@ class OandaTradingBot:
                     'displayPrecision': 3 if 'JPY' in inst else 5,
                     'tradeUnitsPrecision': 0,
                     'minimumTradeSize': '1',
-                    'maximumOrderUnits': '100000000'
+                    'maximumOrderUnits': '100000000',
+                    'marginRate': 0.0333  # Default ~30:1 leverage
                 }
             self.instruments_cache_time = datetime.now()
     
@@ -336,7 +338,8 @@ class OandaTradingBot:
                             'displayPrecision': inst.get('displayPrecision', 5),
                             'tradeUnitsPrecision': inst.get('tradeUnitsPrecision', 0),
                             'minimumTradeSize': inst.get('minimumTradeSize', '1'),
-                            'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000')
+                            'maximumOrderUnits': inst.get('maximumOrderUnits', '100000000'),
+                            'marginRate': inst.get('marginRate', 0.0333)
                         }
                         pip_location = inst.get('pipLocation', -4)
                         return 10 ** pip_location
@@ -380,6 +383,43 @@ class OandaTradingBot:
         logging.debug(f"Calculated pip value for {instrument}: {pip_value} (price={price_str})")
         
         return pip_value
+    
+    def _is_instrument_affordable(self, instrument: str, current_price: float, 
+                                   available_margin: float, margin_buffer: float = MARGIN_BUFFER) -> tuple:
+        """Check if an instrument is affordable based on minimum trade size and available margin.
+        
+        Args:
+            instrument: Instrument name (e.g., 'EUR_USD', 'USD_JPY')
+            current_price: Current price of the instrument
+            available_margin: Available margin from account
+            margin_buffer: Fraction of available margin to keep as buffer (0.0-1.0)
+            
+        Returns:
+            tuple: (is_affordable: bool, reason: str)
+        """
+        # Get instrument metadata from cache
+        inst_data = self.instruments_cache.get(instrument, {})
+        min_units = float(inst_data.get('minimumTradeSize', '1'))
+        margin_rate = float(inst_data.get('marginRate', 0.0333))  # Default ~30:1 leverage
+        
+        # Calculate required margin for minimum trade size
+        # Formula: required_margin = min_units * current_price * margin_rate
+        required_margin = max(0.0, min_units * current_price * margin_rate)
+        
+        # Calculate effective available margin after buffer
+        # margin_buffer is fraction to keep as buffer (e.g., 0.5 = keep 50% as buffer)
+        effective_available = max(0.0, available_margin * (1.0 - margin_buffer))
+        
+        # Check affordability
+        is_affordable = required_margin <= effective_available
+        
+        reason = f"Needs {required_margin:.2f} {'<=' if is_affordable else '>'} avail {effective_available:.2f}"
+        
+        if not is_affordable:
+            logging.debug(f"Affordability check for {instrument}: {reason} (min_units={min_units}, "
+                         f"price={current_price:.5f}, margin_rate={margin_rate:.4f})")
+        
+        return is_affordable, reason
     
     def _get_available_instruments(self):
         """Get list of instruments to scan.
@@ -690,6 +730,19 @@ class OandaTradingBot:
         print(f"Scanning {len(pairs_to_scan)} pairs for signals ({selection_mode} selection)... "
               f"(threshold: {current_threshold:.3f})", flush=True)
         
+        # Fetch margin info once at the start for affordability pre-filter
+        margin_info = None
+        available_margin = None
+        if ENABLE_AFFORDABILITY_FILTER:
+            try:
+                margin_info = self.get_margin_info()
+                available_margin = margin_info['margin_available']
+                logging.debug(f"Available margin for affordability checks: {available_margin:.2f}")
+            except Exception as e:
+                logging.warning(f"Failed to get margin info for affordability filter: {e}")
+                # Disable filter for this cycle if we can't get margin info
+                available_margin = None
+        
         # Debug: Show the bot's thinking
         threshold_source = "adaptive" if self.enable_adaptive_threshold else "static"
         print(f"🤖 BOT DECISION: Using {threshold_source} threshold = {current_threshold:.3f}", flush=True)
@@ -705,6 +758,21 @@ class OandaTradingBot:
                 
                 # Get primary timeframe data (M5)
                 df_primary = self.get_prices(instrument, count=50, granularity=GRANULARITY)
+                
+                # Check if we have price data
+                if df_primary.empty:
+                    logging.debug(f"No price data for {instrument}, skipping")
+                    continue
+                
+                # Affordability pre-filter: Skip instruments that are too expensive for current margin
+                if ENABLE_AFFORDABILITY_FILTER and available_margin is not None:
+                    current_price = df_primary['close'].iloc[-1]
+                    is_affordable, reason = self._is_instrument_affordable(
+                        instrument, current_price, available_margin
+                    )
+                    if not is_affordable:
+                        print(f"   ✗ BOT DECISION: {instrument} - Skipped (unaffordable with current margin: {reason})", flush=True)
+                        continue
                 
                 if STRATEGY == 'advanced_scalp':
                     # Get signal with confidence and ATR

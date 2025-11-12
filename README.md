@@ -21,6 +21,12 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
   - Caches instruments for 24 hours to reduce API calls
   - Fallback to config instruments if API unavailable
   - Enable with `ENABLE_DYNAMIC_INSTRUMENTS = True` in config
+- **Affordability Pre-Filter (NEW!)**: 
+  - Skips instruments whose minimum required margin exceeds available margin
+  - Prevents INSUFFICIENT_MARGIN errors on small balances
+  - Uses instrument metadata (minimumTradeSize, marginRate) from Oanda API
+  - Respects margin buffer settings to keep safety cushion
+  - Enable/disable with `ENABLE_AFFORDABILITY_FILTER = True/False` in config
 - **Dynamic Pair Selection**: Scans multiple pairs and trades the strongest signal
 - **Confidence Scoring**: 0.0-1.0 scoring system filters weak signals
 - **Adaptive Risk Management**: ATR-based stop losses and take profits
