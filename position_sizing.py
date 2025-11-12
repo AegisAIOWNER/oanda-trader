@@ -21,6 +21,53 @@ class PositionSizer:
         self.risk_per_trade = risk_per_trade
         self.kelly_fraction = kelly_fraction
         self.min_trade_value = min_trade_value
+    
+    def _to_float(self, value, default=0.0, param_name="value"):
+        """
+        Safely convert a value to float with validation.
+        
+        Args:
+            value: Value to convert (can be str, int, float, etc.)
+            default: Default value to return if conversion fails
+            param_name: Name of parameter for logging
+            
+        Returns:
+            float: Converted value or default if invalid
+        """
+        try:
+            result = float(value)
+            # Check for NaN or infinity
+            if not np.isfinite(result):
+                logging.warning(f"Invalid {param_name}: {value} (NaN or inf), using default {default}")
+                return default
+            return result
+        except (ValueError, TypeError, AttributeError):
+            logging.warning(f"Cannot convert {param_name} to float: {value}, using default {default}")
+            return default
+    
+    def _to_int(self, value, default=0, param_name="value"):
+        """
+        Safely convert a value to int with validation.
+        
+        Args:
+            value: Value to convert (can be str, int, float, etc.)
+            default: Default value to return if conversion fails
+            param_name: Name of parameter for logging
+            
+        Returns:
+            int: Converted value or default if invalid
+        """
+        try:
+            # First convert to float to handle string decimals like "1.0"
+            float_val = float(value)
+            # Check for NaN or infinity
+            if not np.isfinite(float_val):
+                logging.warning(f"Invalid {param_name}: {value} (NaN or inf), using default {default}")
+                return default
+            return int(float_val)
+        except (ValueError, TypeError, AttributeError):
+            logging.warning(f"Cannot convert {param_name} to int: {value}, using default {default}")
+            return default
         
     def calculate_kelly_criterion(self, win_rate, avg_win, avg_loss):
         """
@@ -313,18 +360,47 @@ class PositionSizer:
         """
         debug = {}
         
-        # Parse minimum and maximum from strings
-        try:
-            min_trade_size = float(minimum_trade_size)
-        except (ValueError, TypeError):
-            min_trade_size = 1.0
-            logging.warning(f"Invalid minimumTradeSize '{minimum_trade_size}', using 1.0")
+        # Parse all numeric inputs with safe conversion
+        balance = self._to_float(balance, default=0.0, param_name="balance")
+        stop_loss_pips = self._to_float(stop_loss_pips, default=0.0, param_name="stop_loss_pips")
+        pip_value = self._to_float(pip_value, default=0.0, param_name="pip_value")
+        current_price = self._to_float(current_price, default=0.0, param_name="current_price")
+        available_margin = self._to_float(available_margin, default=0.0, param_name="available_margin")
+        margin_rate = self._to_float(margin_rate, default=0.0, param_name="margin_rate")
+        min_trade_size = self._to_float(minimum_trade_size, default=1.0, param_name="minimum_trade_size")
+        trade_units_precision = self._to_int(trade_units_precision, default=0, param_name="trade_units_precision")
+        max_order_units = self._to_float(maximum_order_units, default=100000000.0, param_name="maximum_order_units")
+        risk_per_trade = self._to_float(risk_per_trade, default=0.02, param_name="risk_per_trade")
+        max_units_per_instrument = self._to_float(max_units_per_instrument, default=100000.0, param_name="max_units_per_instrument")
+        min_trade_value = self._to_float(min_trade_value, default=1.50, param_name="min_trade_value")
+        margin_buffer = self._to_float(margin_buffer, default=0.5, param_name="margin_buffer")
+        if auto_scale_min_units is not None:
+            auto_scale_min_units = self._to_float(auto_scale_min_units, default=None, param_name="auto_scale_min_units")
         
-        try:
-            max_order_units = float(maximum_order_units)
-        except (ValueError, TypeError):
-            max_order_units = 100000000.0
-            logging.warning(f"Invalid maximumOrderUnits '{maximum_order_units}', using 100000000")
+        # Validate critical inputs
+        if balance <= 0:
+            debug['reason'] = f'Invalid balance: {balance}'
+            return 0, 0.0, debug
+        
+        if available_margin < 0:
+            debug['reason'] = f'Invalid available_margin: {available_margin}'
+            return 0, 0.0, debug
+        
+        if current_price <= 0:
+            debug['reason'] = f'Invalid current_price: {current_price}'
+            return 0, 0.0, debug
+        
+        if margin_rate <= 0:
+            debug['reason'] = f'Invalid margin_rate: {margin_rate}'
+            return 0, 0.0, debug
+        
+        if risk_per_trade < 0:
+            debug['reason'] = f'Invalid risk_per_trade: {risk_per_trade}'
+            return 0, 0.0, debug
+        
+        logging.debug(f"Parsed inputs: balance={balance:.2f}, current_price={current_price:.5f}, "
+                     f"margin_rate={margin_rate:.5f}, min_trade_size={min_trade_size}, "
+                     f"max_order_units={max_order_units}")
         
         # Effective available margin (after buffer)
         effective_available_margin = available_margin * (1 - margin_buffer)
@@ -334,15 +410,12 @@ class PositionSizer:
         
         if effective_available_margin <= 0:
             debug['reason'] = 'No effective margin available after buffer'
+            logging.debug(f"Skip reason: {debug['reason']}")
             return 0, 0.0, debug
         
         # Calculate units by margin constraint
         # margin_required = units * current_price * margin_rate
         # units = effective_available_margin / (current_price * margin_rate)
-        if current_price <= 0 or margin_rate <= 0:
-            debug['reason'] = f'Invalid price ({current_price}) or margin_rate ({margin_rate})'
-            return 0, 0.0, debug
-        
         required_margin_per_unit = current_price * margin_rate
         units_by_margin = int(effective_available_margin / required_margin_per_unit)
         debug['required_margin_per_unit'] = required_margin_per_unit
@@ -359,11 +432,18 @@ class PositionSizer:
             units_by_risk = 0
             debug['units_by_risk'] = 0
             debug['risk_per_unit'] = 0
+            logging.debug(f"Risk calculation skipped: stop_loss_pips={stop_loss_pips}, pip_value={pip_value}")
         else:
             risk_per_unit = stop_loss_pips * pip_value
-            units_by_risk = int(risk_amount / risk_per_unit)
-            debug['risk_per_unit'] = risk_per_unit
-            debug['units_by_risk'] = units_by_risk
+            if risk_per_unit == 0:
+                units_by_risk = 0
+                debug['units_by_risk'] = 0
+                debug['risk_per_unit'] = 0
+                logging.debug(f"Risk per unit is zero: stop_loss_pips={stop_loss_pips}, pip_value={pip_value}")
+            else:
+                units_by_risk = int(risk_amount / risk_per_unit)
+                debug['risk_per_unit'] = risk_per_unit
+                debug['units_by_risk'] = units_by_risk
         
         # Take minimum of all constraints
         candidate_units = min(units_by_margin, units_by_risk, max_order_units, max_units_per_instrument)
@@ -394,6 +474,7 @@ class PositionSizer:
         # Check if candidate meets minimum trade size
         if candidate_units < effective_min_units:
             debug['reason'] = f'Candidate units {candidate_units} below minimum trade size {effective_min_units}'
+            logging.debug(f"Skip reason: {debug['reason']}")
             return 0, 0.0, debug
         
         # Enforce minimum trade value
@@ -402,6 +483,7 @@ class PositionSizer:
         
         if trade_value < min_trade_value:
             debug['reason'] = f'Trade value ${trade_value:.2f} below minimum ${min_trade_value:.2f}'
+            logging.debug(f"Skip reason: {debug['reason']}")
             return 0, 0.0, debug
         
         # Calculate resulting risk percentage
@@ -412,6 +494,9 @@ class PositionSizer:
             resulting_risk_pct = 0.0
         
         debug['resulting_risk_pct'] = resulting_risk_pct
+        
+        logging.debug(f"Auto-scaling successful: units={candidate_units}, risk_pct={resulting_risk_pct*100:.2f}%, "
+                     f"trade_value=${trade_value:.2f}")
         
         return candidate_units, resulting_risk_pct, debug
     

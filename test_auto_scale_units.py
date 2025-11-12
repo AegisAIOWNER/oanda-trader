@@ -272,6 +272,219 @@ class TestAutoScaleUnits(unittest.TestCase):
         print(f"  final units: {units}")
         print(f"  risk_pct: {risk_pct*100:.2f}%")
         print(f"  trade_value: ${debug['trade_value']:.2f}")
+    
+    def test_string_inputs_from_instrument_metadata(self):
+        """Test that string inputs from instrument metadata are properly parsed."""
+        # Scenario with all instrument metadata as strings (typical API response)
+        balance = 1000.0
+        stop_loss_pips = 10.0
+        pip_value = 0.0001
+        current_price = 1.1000
+        available_margin = 900.0
+        margin_rate = '0.0333'  # String from API
+        minimum_trade_size = '1'  # String from API
+        trade_units_precision = '0'  # String from API
+        maximum_order_units = '100000000'  # String from API
+        risk_per_trade = 0.02
+        max_units_per_instrument = 100000
+        min_trade_value = 1.50
+        margin_buffer = 0.5
+        
+        # Should not raise TypeError
+        units, risk_pct, debug = self.sizer.calculate_auto_scaled_units(
+            balance=balance,
+            stop_loss_pips=stop_loss_pips,
+            pip_value=pip_value,
+            current_price=current_price,
+            available_margin=available_margin,
+            margin_rate=margin_rate,
+            minimum_trade_size=minimum_trade_size,
+            trade_units_precision=trade_units_precision,
+            maximum_order_units=maximum_order_units,
+            risk_per_trade=risk_per_trade,
+            max_units_per_instrument=max_units_per_instrument,
+            min_trade_value=min_trade_value,
+            margin_buffer=margin_buffer
+        )
+        
+        # Should successfully compute units
+        self.assertGreater(units, 0, "Should compute positive units with string inputs")
+        self.assertIsInstance(units, int, "Units should be an integer")
+        
+        print(f"\nString inputs test:")
+        print(f"  margin_rate (string): '{margin_rate}'")
+        print(f"  minimum_trade_size (string): '{minimum_trade_size}'")
+        print(f"  final units: {units}")
+        print(f"  risk_pct: {risk_pct*100:.2f}%")
+    
+    def test_invalid_string_inputs_handled_gracefully(self):
+        """Test that invalid string inputs are handled without raising exceptions."""
+        balance = 1000.0
+        stop_loss_pips = 10.0
+        pip_value = 0.0001
+        current_price = 1.1000
+        available_margin = 900.0
+        margin_rate = 'invalid'  # Invalid string
+        minimum_trade_size = 'abc'  # Invalid string
+        trade_units_precision = 'xyz'  # Invalid string
+        maximum_order_units = 'not_a_number'  # Invalid string
+        risk_per_trade = 0.02
+        max_units_per_instrument = 100000
+        min_trade_value = 1.50
+        margin_buffer = 0.5
+        
+        # Should not raise TypeError or ValueError
+        units, risk_pct, debug = self.sizer.calculate_auto_scaled_units(
+            balance=balance,
+            stop_loss_pips=stop_loss_pips,
+            pip_value=pip_value,
+            current_price=current_price,
+            available_margin=available_margin,
+            margin_rate=margin_rate,
+            minimum_trade_size=minimum_trade_size,
+            trade_units_precision=trade_units_precision,
+            maximum_order_units=maximum_order_units,
+            risk_per_trade=risk_per_trade,
+            max_units_per_instrument=max_units_per_instrument,
+            min_trade_value=min_trade_value,
+            margin_buffer=margin_buffer
+        )
+        
+        # Should return 0 with a clear reason
+        self.assertEqual(units, 0, "Should return 0 units for invalid inputs")
+        self.assertIn('reason', debug, "Debug should contain skip reason")
+        
+        print(f"\nInvalid string inputs test:")
+        print(f"  Reason: {debug['reason']}")
+    
+    def test_negative_inputs_handled(self):
+        """Test that negative values are caught and handled."""
+        balance = 1000.0
+        stop_loss_pips = 10.0
+        pip_value = 0.0001
+        current_price = -1.1000  # Negative price (invalid)
+        available_margin = 900.0
+        margin_rate = 0.0333
+        minimum_trade_size = '1'
+        trade_units_precision = 0
+        maximum_order_units = '100000000'
+        risk_per_trade = 0.02
+        max_units_per_instrument = 100000
+        min_trade_value = 1.50
+        margin_buffer = 0.5
+        
+        units, risk_pct, debug = self.sizer.calculate_auto_scaled_units(
+            balance=balance,
+            stop_loss_pips=stop_loss_pips,
+            pip_value=pip_value,
+            current_price=current_price,
+            available_margin=available_margin,
+            margin_rate=margin_rate,
+            minimum_trade_size=minimum_trade_size,
+            trade_units_precision=trade_units_precision,
+            maximum_order_units=maximum_order_units,
+            risk_per_trade=risk_per_trade,
+            max_units_per_instrument=max_units_per_instrument,
+            min_trade_value=min_trade_value,
+            margin_buffer=margin_buffer
+        )
+        
+        # Should return 0 with reason about invalid price
+        self.assertEqual(units, 0, "Should return 0 units for negative price")
+        self.assertIn('reason', debug, "Debug should contain skip reason")
+        self.assertIn('price', debug['reason'].lower(), "Reason should mention price")
+        
+        print(f"\nNegative inputs test:")
+        print(f"  Reason: {debug['reason']}")
+    
+    def test_zero_balance_handled(self):
+        """Test that zero or negative balance is handled."""
+        balance = 0.0  # Zero balance
+        stop_loss_pips = 10.0
+        pip_value = 0.0001
+        current_price = 1.1000
+        available_margin = 900.0
+        margin_rate = 0.0333
+        minimum_trade_size = '1'
+        trade_units_precision = 0
+        maximum_order_units = '100000000'
+        risk_per_trade = 0.02
+        max_units_per_instrument = 100000
+        min_trade_value = 1.50
+        margin_buffer = 0.5
+        
+        units, risk_pct, debug = self.sizer.calculate_auto_scaled_units(
+            balance=balance,
+            stop_loss_pips=stop_loss_pips,
+            pip_value=pip_value,
+            current_price=current_price,
+            available_margin=available_margin,
+            margin_rate=margin_rate,
+            minimum_trade_size=minimum_trade_size,
+            trade_units_precision=trade_units_precision,
+            maximum_order_units=maximum_order_units,
+            risk_per_trade=risk_per_trade,
+            max_units_per_instrument=max_units_per_instrument,
+            min_trade_value=min_trade_value,
+            margin_buffer=margin_buffer
+        )
+        
+        # Should return 0 with reason about invalid balance
+        self.assertEqual(units, 0, "Should return 0 units for zero balance")
+        self.assertIn('reason', debug, "Debug should contain skip reason")
+        self.assertIn('balance', debug['reason'].lower(), "Reason should mention balance")
+        
+        print(f"\nZero balance test:")
+        print(f"  Reason: {debug['reason']}")
+    
+    def test_real_world_usd_thb_scenario(self):
+        """Test realistic USD_THB scenario with string metadata from API."""
+        # Realistic USD_THB parameters
+        balance = 100.0
+        stop_loss_pips = 15.0
+        pip_value = 0.01  # THB pairs typically have 0.01 pip value
+        current_price = 33.5  # USD/THB around 33-34
+        available_margin = 95.0
+        margin_rate = '0.05'  # 20:1 leverage, string from API
+        minimum_trade_size = '1'  # String from API
+        trade_units_precision = '0'  # String from API
+        maximum_order_units = '100000'  # String from API
+        risk_per_trade = 0.02
+        max_units_per_instrument = 100000
+        min_trade_value = 1.50
+        margin_buffer = 0.5
+        
+        # Should not raise TypeError
+        units, risk_pct, debug = self.sizer.calculate_auto_scaled_units(
+            balance=balance,
+            stop_loss_pips=stop_loss_pips,
+            pip_value=pip_value,
+            current_price=current_price,
+            available_margin=available_margin,
+            margin_rate=margin_rate,
+            minimum_trade_size=minimum_trade_size,
+            trade_units_precision=trade_units_precision,
+            maximum_order_units=maximum_order_units,
+            risk_per_trade=risk_per_trade,
+            max_units_per_instrument=max_units_per_instrument,
+            min_trade_value=min_trade_value,
+            margin_buffer=margin_buffer
+        )
+        
+        # Should either compute valid units or return 0 with clear reason
+        self.assertIsInstance(units, int, "Units should be an integer")
+        self.assertGreaterEqual(units, 0, "Units should be non-negative")
+        
+        if units == 0:
+            self.assertIn('reason', debug, "Should have reason when units=0")
+            print(f"\nUSD_THB test (skipped):")
+            print(f"  Reason: {debug['reason']}")
+        else:
+            self.assertGreater(units, 0, "Units should be positive")
+            print(f"\nUSD_THB test (executed):")
+            print(f"  units: {units}")
+            print(f"  risk_pct: {risk_pct*100:.2f}%")
+            print(f"  trade_value: ${debug['trade_value']:.2f}")
 
 
 if __name__ == '__main__':
