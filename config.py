@@ -42,6 +42,7 @@ ML_AUTO_TRAIN_INTERVAL = 10  # Automatically retrain model after N new trades
 POSITION_SIZING_METHOD = 'fixed_percentage'  # 'fixed_percentage' or 'kelly_criterion'
 RISK_PER_TRADE = 0.02  # 2% risk per trade for fixed percentage method
 KELLY_FRACTION = 0.25  # Use 25% of Kelly Criterion (quarter Kelly for safety)
+MIN_TRADE_VALUE = 1.50  # Minimum trade value in account currency ($1-2 range, using $1.50 as midpoint) to meet Oanda margin requirements
 
 # Multi-timeframe settings
 ENABLE_MULTIFRAME = True  # Enable multi-timeframe confirmation

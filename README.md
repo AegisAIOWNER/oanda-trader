@@ -37,6 +37,7 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 - **Fixed Percentage**: Conservative 1-2% risk per trade
 - **Confidence Adjustment**: Position size scales with signal confidence
 - **Dynamic Calculation**: Adapts to account balance and market volatility
+- **Minimum Position Size Enforcement**: Automatically enforces minimum trade value ($1-2) to meet broker margin requirements, overriding risk-based calculations when needed while keeping stops and limits intact
 
 ### Multi-Timeframe Analysis
 - **H1 Confirmation**: Higher timeframe (1-hour) confirms M5 signals
@@ -171,6 +172,7 @@ INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', ...]
 ATR_STOP_MULTIPLIER = 1.0  # Stop loss = 1.0 × ATR
 ATR_PROFIT_MULTIPLIER = 2.5  # Take profit = 2.5 × ATR
 MAX_DAILY_LOSS_PERCENT = 6.0  # Daily loss limit
+MIN_TRADE_VALUE = 1.50  # Minimum trade value ($1-2 range) to meet broker margin requirements
 
 # Adaptive Threshold (autonomous self-optimization)
 ENABLE_ADAPTIVE_THRESHOLD = True  # Enable dynamic threshold adjustment
@@ -317,6 +319,7 @@ ML_MODEL_PATH = 'models/rf_model.pkl'
 # Position Sizing
 POSITION_SIZING_METHOD = 'fixed_percentage'  # or 'kelly_criterion'
 RISK_PER_TRADE = 0.02  # 2% per trade
+MIN_TRADE_VALUE = 1.50  # Minimum trade value ($1-2 range) to meet broker margin requirements
 
 # Multi-timeframe
 ENABLE_MULTIFRAME = True
