@@ -313,20 +313,7 @@ class PositionSizer:
         """
         debug = {}
         
-        # Parse minimum and maximum from strings
-        try:
-            min_trade_size = float(minimum_trade_size)
-        except (ValueError, TypeError):
-            min_trade_size = 1.0
-            logging.warning(f"Invalid minimumTradeSize '{minimum_trade_size}', using 1.0")
-        
-        try:
-            max_order_units = float(maximum_order_units)
-        except (ValueError, TypeError):
-            max_order_units = 100000000.0
-            logging.warning(f"Invalid maximumOrderUnits '{maximum_order_units}', using 100000000")
-        
-        # Convert current_price and margin_rate to float to prevent TypeError
+        # Convert current_price and margin_rate to float at the start to prevent TypeError
         try:
             current_price = float(current_price)
         except (ValueError, TypeError):
@@ -340,6 +327,19 @@ class PositionSizer:
             logging.error(f"Invalid margin_rate '{margin_rate}', cannot calculate units")
             debug['reason'] = f'Invalid margin_rate: {margin_rate}'
             return 0, 0.0, debug
+        
+        # Parse minimum and maximum from strings
+        try:
+            min_trade_size = float(minimum_trade_size)
+        except (ValueError, TypeError):
+            min_trade_size = 1.0
+            logging.warning(f"Invalid minimumTradeSize '{minimum_trade_size}', using 1.0")
+        
+        try:
+            max_order_units = float(maximum_order_units)
+        except (ValueError, TypeError):
+            max_order_units = 100000000.0
+            logging.warning(f"Invalid maximumOrderUnits '{maximum_order_units}', using 100000000")
         
         # Effective available margin (after buffer)
         effective_available_margin = available_margin * (1 - margin_buffer)
