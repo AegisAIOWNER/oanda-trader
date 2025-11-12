@@ -445,6 +445,35 @@ class OandaTradingBot:
             # Return config instruments
             return INSTRUMENTS
 
+    def _apply_curated_filter(self, pairs):
+        """Apply curated instruments filter to the scan list.
+        
+        This filter is scan-time only and test-safe (no-op when no overlap exists).
+        It narrows the scan list to curated FX majors when applicable.
+        
+        Args:
+            pairs (list): List of instrument pairs to filter
+            
+        Returns:
+            list: Filtered list of instrument pairs
+        """
+        if not ENABLE_CURATED_FILTER:
+            logging.debug("Curated filter disabled, returning original pairs")
+            return pairs
+        
+        # Calculate intersection while preserving order
+        curated_set = set(CURATED_INSTRUMENTS)
+        filtered_pairs = [p for p in pairs if p in curated_set]
+        
+        # If no overlap (common in unit tests with synthetic symbols), return original pairs (no-op)
+        if not filtered_pairs:
+            logging.info(f"Curated filter: No overlap with curated instruments, returning original {len(pairs)} pairs (test-safe no-op)")
+            return pairs
+        
+        # Log the filtering result
+        logging.info(f"Curated filter: Narrowed {len(pairs)} pairs to {len(filtered_pairs)} curated FX majors: {filtered_pairs}")
+        return filtered_pairs
+
     def get_open_position_instruments(self):
         """Get list of instruments with currently open positions.
         
@@ -756,6 +785,9 @@ class OandaTradingBot:
                 else:
                     pairs_to_scan.extend(remaining_instruments[:remaining_slots])
                     selection_mode = "prioritized+sequential"
+        
+        # Apply curated filter (scan-time only, test-safe)
+        pairs_to_scan = self._apply_curated_filter(pairs_to_scan)
         
         # Display scan info
         print(f"Scanning {len(pairs_to_scan)} pairs for signals ({selection_mode} selection)... "

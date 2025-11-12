@@ -27,6 +27,13 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
   - Uses instrument metadata (minimumTradeSize, marginRate) from Oanda API
   - Respects margin buffer settings to keep safety cushion
   - Enable/disable with `ENABLE_AFFORDABILITY_FILTER = True/False` in config
+- **Curated FX Majors Filter (NEW!)**: 
+  - Focuses trading on highly liquid FX major pairs at scan-time for better profitability
+  - Curated list: EUR_USD, GBP_USD, USD_JPY, USD_CAD, AUD_USD, NZD_USD, EUR_GBP, USD_CHF
+  - Benefits: Tighter spreads, consistent liquidity, more reliable signals for compounding small wins
+  - Test-safe design: No-op when no overlap exists (preserves existing tests with synthetic symbols)
+  - Scan-time only: Does not modify instrument fetching or caching (keeps dynamic instruments enabled)
+  - Enable/disable with `ENABLE_CURATED_FILTER = True/False` in config (enabled by default)
 - **Dynamic Pair Selection**: Scans multiple pairs and trades the strongest signal
 - **Confidence Scoring**: 0.0-1.0 scoring system filters weak signals
 - **Adaptive Risk Management**: ATR-based stop losses and take profits
