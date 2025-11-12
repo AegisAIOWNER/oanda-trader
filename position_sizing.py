@@ -7,7 +7,7 @@ import numpy as np
 class PositionSizer:
     """Calculate optimal position sizes based on various strategies."""
     
-    def __init__(self, method='fixed_percentage', risk_per_trade=0.02, kelly_fraction=0.25):
+    def __init__(self, method='fixed_percentage', risk_per_trade=0.02, kelly_fraction=0.25, min_trade_value=1.50):
         """
         Initialize position sizer.
         
@@ -15,10 +15,12 @@ class PositionSizer:
             method: 'fixed_percentage' or 'kelly_criterion'
             risk_per_trade: Fixed percentage of balance to risk (e.g., 0.02 = 2%)
             kelly_fraction: Fraction of Kelly Criterion to use (0.25 = quarter Kelly)
+            min_trade_value: Minimum trade value in account currency (default: $1.50) to meet broker margin requirements
         """
         self.method = method
         self.risk_per_trade = risk_per_trade
         self.kelly_fraction = kelly_fraction
+        self.min_trade_value = min_trade_value
         
     def calculate_kelly_criterion(self, win_rate, avg_win, avg_loss):
         """
@@ -122,6 +124,9 @@ class PositionSizer:
             units = int(risk_amount / (stop_loss_pips * pip_value)) if stop_loss_pips > 0 else 1000
             units = max(100, units)
             
+            # Enforce minimum position size to meet broker margin requirements
+            units = self._enforce_minimum_position_size(units, pip_value, stop_loss_pips)
+            
             logging.info(f"Kelly position sizing: {units} units "
                         f"(risk: {adjusted_kelly*100:.2f}% of balance)")
             
@@ -135,12 +140,51 @@ class PositionSizer:
             adjusted_units = int(units * confidence)
             adjusted_units = max(100, adjusted_units)
             
+            # Enforce minimum position size to meet broker margin requirements
+            adjusted_units = self._enforce_minimum_position_size(adjusted_units, pip_value, stop_loss_pips)
+            
             risk_pct = self.risk_per_trade * confidence
             
             logging.info(f"Fixed % position sizing: {adjusted_units} units "
                         f"(risk: {risk_pct*100:.2f}% of balance)")
             
             return adjusted_units, risk_pct
+    
+    def _enforce_minimum_position_size(self, units, pip_value, stop_loss_pips):
+        """
+        Enforce minimum position size based on minimum trade value.
+        
+        This ensures that the position meets broker margin requirements by calculating
+        the minimum units needed to achieve the minimum trade value (e.g., $1-2).
+        
+        Args:
+            units: Calculated position size in units
+            pip_value: Value of 1 pip for the instrument (e.g., 0.0001 for EUR_USD, 0.01 for JPY pairs)
+            stop_loss_pips: Stop loss distance in pips
+            
+        Returns:
+            int: Adjusted units ensuring minimum trade value is met
+        """
+        if stop_loss_pips <= 0 or pip_value <= 0:
+            logging.warning(f"Invalid parameters for minimum position size calculation: "
+                          f"stop_loss_pips={stop_loss_pips}, pip_value={pip_value}")
+            return max(100, units)
+        
+        # Calculate minimum units needed to achieve min_trade_value
+        # Formula: min_units = min_trade_value / (stop_loss_pips * pip_value)
+        # This ensures: min_units * stop_loss_pips * pip_value >= min_trade_value
+        min_units = int(self.min_trade_value / (stop_loss_pips * pip_value))
+        
+        # Ensure at least 100 units as absolute minimum (legacy safeguard)
+        min_units = max(100, min_units)
+        
+        if units < min_units:
+            logging.info(f"Position size {units} units below minimum {min_units} units "
+                        f"(required for ${self.min_trade_value:.2f} minimum trade value). "
+                        f"Overriding to minimum size.")
+            return min_units
+        
+        return units
     
     def get_recommended_method(self, total_trades):
         """

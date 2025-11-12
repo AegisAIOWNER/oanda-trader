@@ -56,7 +56,7 @@ class OandaTradingBot:
         
         # Initialize position sizer
         print("DEBUG: Initializing position sizer...", flush=True)
-        self.position_sizer = PositionSizer(method=position_sizing_method, risk_per_trade=0.02)
+        self.position_sizer = PositionSizer(method=position_sizing_method, risk_per_trade=0.02, min_trade_value=MIN_TRADE_VALUE)
         print("DEBUG: Position sizer initialized", flush=True)
         
         # Initialize multi-timeframe analyzer
