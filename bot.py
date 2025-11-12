@@ -1502,10 +1502,21 @@ class OandaTradingBot:
             # Get margin information for margin-based position sizing
             margin_info = self.get_margin_info()
             
-            # Calculate optimal position size using margin-based approach
-            # This prevents INSUFFICIENT_MARGIN errors for leveraged instruments
+            # Get instrument metadata for auto-scaling
+            inst_metadata = self.instruments_cache.get(instrument, {})
+            margin_rate = float(inst_metadata.get('marginRate', 0.0333))
+            minimum_trade_size = float(inst_metadata.get('minimumTradeSize', 1))
+            trade_units_precision = int(inst_metadata.get('tradeUnitsPrecision', 0))
+            maximum_order_units = float(inst_metadata.get('maximumOrderUnits', 100000000))
+            
+            # Calculate optimal position size using auto-scaling if enabled
+            # This prevents INSUFFICIENT_MARGIN errors and respects risk limits
             performance_metrics = self.db.get_performance_metrics(days=30)
-            units, risk_pct = self.position_sizer.calculate_position_size(
+            
+            # Import config values for auto-scaling
+            from config import ENABLE_AUTO_SCALE_UNITS, AUTO_SCALE_MARGIN_BUFFER, AUTO_SCALE_MIN_UNITS, MAX_UNITS_PER_INSTRUMENT
+            
+            result = self.position_sizer.calculate_position_size(
                 balance=current_balance,
                 stop_loss_pips=sl,
                 pip_value=pip_value,
@@ -1513,11 +1524,45 @@ class OandaTradingBot:
                 confidence=confidence,
                 available_margin=margin_info['margin_available'],
                 current_price=current_price,
-                margin_buffer=MARGIN_BUFFER
+                margin_buffer=MARGIN_BUFFER,
+                enable_auto_scale=ENABLE_AUTO_SCALE_UNITS,
+                margin_rate=margin_rate,
+                minimum_trade_size=minimum_trade_size,
+                trade_units_precision=trade_units_precision,
+                maximum_order_units=maximum_order_units,
+                auto_scale_margin_buffer=AUTO_SCALE_MARGIN_BUFFER,
+                auto_scale_min_units=AUTO_SCALE_MIN_UNITS,
+                max_units_per_instrument=MAX_UNITS_PER_INSTRUMENT
             )
+            
+            # Handle both 2-tuple and 3-tuple returns (auto-scaling returns reason)
+            if len(result) == 3:
+                units, risk_pct, reason = result
+                logging.info(f"Auto-scaling result: {reason}")
+            else:
+                units, risk_pct = result
+                reason = "Legacy sizing method"
+            
+            # Check if units is 0 (position size constraints not met)
+            if units == 0:
+                logging.warning(f"Skipping {instrument}: {reason}")
+                if self.structured_logger:
+                    self.structured_logger.log_trade_decision(
+                        instrument, signal, confidence, "SKIPPED",
+                        f"Auto-scale constraints not met: {reason}"
+                    )
+                return True
             
             logging.info(f"Placing order for {instrument}: {signal} with SL={sl:.4f}, TP={tp:.4f}, \
                         units={units}, risk={risk_pct*100:.2f}%, pip_value={pip_value:.4f}")
+            
+            # Debug logging for auto-scaling decision
+            if ENABLE_AUTO_SCALE_UNITS:
+                logging.debug(f"Auto-scaling debug for {instrument}: "
+                            f"margin_rate={margin_rate:.4f}, "
+                            f"minimum_trade_size={minimum_trade_size}, "
+                            f"trade_units_precision={trade_units_precision}, "
+                            f"available_margin={margin_info['margin_available']:.2f}")
             
             # Place order with current price for risk calculation
             response = self.place_order(instrument, signal, units, sl, tp, current_price)
