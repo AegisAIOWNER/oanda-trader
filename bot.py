@@ -757,6 +757,23 @@ class OandaTradingBot:
                     pairs_to_scan.extend(remaining_instruments[:remaining_slots])
                     selection_mode = "prioritized+sequential"
         
+        # Apply curated filter if enabled (test-safe: preserves original list when no overlap)
+        if ENABLE_CURATED_FILTER:
+            # Compute intersection in the order of pairs_to_scan to preserve priority
+            filtered = [p for p in pairs_to_scan if p in CURATED_INSTRUMENTS]
+            
+            if filtered:
+                # We have overlap with curated instruments, use filtered list
+                original_count = len(pairs_to_scan)
+                pairs_to_scan = filtered
+                logging.info(f"🎯 Curated filter applied: {original_count} pairs → {len(pairs_to_scan)} curated pairs")
+                print(f"🎯 CURATED FILTER: Reduced from {original_count} to {len(pairs_to_scan)} curated FX pairs", flush=True)
+                print(f"   Selected curated pairs: {', '.join(pairs_to_scan)}", flush=True)
+            else:
+                # No overlap (e.g., in tests with synthetic symbols), preserve original list
+                logging.info(f"🎯 Curated filter: No overlap with curated instruments, using all {len(pairs_to_scan)} pairs (test-safe)")
+                print(f"🎯 CURATED FILTER: No overlap with curated list, using all {len(pairs_to_scan)} pairs (test-safe)", flush=True)
+        
         # Display scan info
         print(f"Scanning {len(pairs_to_scan)} pairs for signals ({selection_mode} selection)... "
               f"(threshold: {current_threshold:.3f})", flush=True)

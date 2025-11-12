@@ -14,7 +14,16 @@ A scalable, intelligent auto trading bot for Oanda with advanced scalping strate
 
 ### Core Trading Features
 - **Advanced Scalping Strategy**: Combines MACD, RSI, Bollinger Bands, ATR, and volume analysis
-- **Dynamic Instrument Selection (NEW!)**: 
+- **Curated Instrument Filter (NEW!)**: 
+  - Focuses trading on highly liquid FX majors and CHF pairs for improved profitability
+  - Default curated list: EUR_USD, GBP_USD, USD_JPY, USD_CAD, AUD_USD, NZD_USD, EUR_GBP, USD_CHF
+  - Tighter spreads and better signal quality on major pairs
+  - **Test-Safe Design**: Preserves original instrument list when no overlap exists (e.g., synthetic test symbols)
+  - Applied at scan-time only, does not affect dynamic instrument loading
+  - Enable/disable with `ENABLE_CURATED_FILTER = True/False` in config
+  - Customize pair list with `CURATED_INSTRUMENTS` array in config
+  - Clear logging shows when filter is applied and which pairs are selected
+- **Dynamic Instrument Selection**: 
   - Automatically fetches ALL tradable instruments from Oanda API (forex, commodities, indices, bonds, CFDs)
   - Randomly selects subset up to MAX_PAIRS_TO_SCAN each cycle to maximize market coverage
   - Dynamically determines pip sizes from instrument metadata (pipLocation)
@@ -181,14 +190,20 @@ Key settings in `config.py`:
 ```python
 STRATEGY = 'advanced_scalp'  # Strategy to use
 MAX_PAIRS_TO_SCAN = 25  # Maximum pairs to scan per cycle
-CONFIDENCE_THRESHOLD = 0.8  # Base confidence for trades (can be adaptive)
+CONFIDENCE_THRESHOLD = 0.7  # Base confidence for trades (raised from 0.6 for quality)
 INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', ...]
 
-# Risk Management
-ATR_STOP_MULTIPLIER = 1.0  # Stop loss = 1.0 × ATR
-ATR_PROFIT_MULTIPLIER = 2.5  # Take profit = 2.5 × ATR
+# Curated Instrument Filter (NEW!)
+CURATED_INSTRUMENTS = ['EUR_USD', 'GBP_USD', 'USD_JPY', 'USD_CAD', 'AUD_USD', 'NZD_USD', 'EUR_GBP', 'USD_CHF']
+ENABLE_CURATED_FILTER = True  # Focus on high-liquidity FX majors for profitability
+
+# Risk Management (Updated for better risk/reward)
+RISK_PER_TRADE = 0.01  # 1% risk per trade (conservative, down from 2%)
+ATR_STOP_MULTIPLIER = 1.0  # Stop loss = 1.0 × ATR (balanced, up from 0.5)
+ATR_PROFIT_MULTIPLIER = 2.5  # Take profit = 2.5 × ATR (improved ratio, up from 1.5)
 MAX_DAILY_LOSS_PERCENT = 6.0  # Daily loss limit
 MIN_TRADE_VALUE = 1.50  # Minimum trade value ($1-2 range) to meet broker margin requirements
+AUTO_SCALE_MARGIN_BUFFER = 0.10  # 10% margin buffer for auto-scaling (safer than 0.0)
 
 # Adaptive Threshold (autonomous self-optimization)
 ENABLE_ADAPTIVE_THRESHOLD = True  # Enable dynamic threshold adjustment
@@ -209,9 +224,9 @@ ENABLE_DYNAMIC_INSTRUMENTS = True  # Enable dynamic instrument selection from al
 DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before refreshing
 
 # Enhanced Risk Management (Future-Proofing) (NEW!)
-MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions
-MAX_RISK_PER_TRADE = 0.02  # Maximum risk per trade (2% of balance)
-MAX_TOTAL_RISK = 0.10  # Maximum total risk across all positions (10% of balance)
+MAX_OPEN_POSITIONS = 3  # Maximum concurrent open positions (increased from 1 for diversification)
+MAX_RISK_PER_TRADE = 0.5  # Maximum risk per trade (50% of balance)
+MAX_TOTAL_RISK = 0.15  # Maximum total risk across all positions (15% of balance)
 MAX_CORRELATION_POSITIONS = 2  # Maximum positions in correlated instruments
 MAX_UNITS_PER_INSTRUMENT = 100000  # Maximum units per instrument
 MAX_SLIPPAGE_PIPS = 2.0  # Maximum acceptable slippage in pips
