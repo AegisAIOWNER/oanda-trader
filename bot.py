@@ -436,6 +436,21 @@ class OandaTradingBot:
         r = accounts.AccountSummary(accountID=self.account_id)
         response = self._rate_limited_request(r)
         return float(response['account']['balance'])
+    
+    def get_margin_info(self):
+        """
+        Get margin information from account.
+        
+        Returns:
+            dict: Dictionary with 'balance', 'margin_available', 'margin_used'
+        """
+        r = accounts.AccountSummary(accountID=self.account_id)
+        response = self._rate_limited_request(r)
+        return {
+            'balance': float(response['account']['balance']),
+            'margin_available': float(response['account']['marginAvailable']),
+            'margin_used': float(response['account'].get('marginUsed', 0))
+        }
 
     def check_margin(self):
         r = accounts.AccountSummary(accountID=self.account_id)
@@ -1411,14 +1426,21 @@ class OandaTradingBot:
             # Calculate pip value for this instrument
             pip_value = self._calculate_pip_value(instrument, current_price)
             
-            # Calculate optimal position size
+            # Get margin information for margin-based position sizing
+            margin_info = self.get_margin_info()
+            
+            # Calculate optimal position size using margin-based approach
+            # This prevents INSUFFICIENT_MARGIN errors for leveraged instruments
             performance_metrics = self.db.get_performance_metrics(days=30)
             units, risk_pct = self.position_sizer.calculate_position_size(
                 balance=current_balance,
                 stop_loss_pips=sl,
                 pip_value=pip_value,
                 performance_metrics=performance_metrics,
-                confidence=confidence
+                confidence=confidence,
+                available_margin=margin_info['margin_available'],
+                current_price=current_price,
+                margin_buffer=MARGIN_BUFFER
             )
             
             logging.info(f"Placing order for {instrument}: {signal} with SL={sl:.4f}, TP={tp:.4f}, \

@@ -58,6 +58,63 @@ class PositionSizer:
         
         return kelly_clamped
     
+    def calculate_margin_based(self, balance, available_margin, current_price, margin_buffer=0.50, max_margin_usage=0.50):
+        """
+        Calculate position size based on available margin.
+        
+        This method calculates the maximum units that can be traded based on available margin,
+        ensuring we don't exceed INSUFFICIENT_MARGIN errors for leveraged instruments.
+        
+        Args:
+            balance: Account balance
+            available_margin: Available margin from API
+            current_price: Current price of the instrument
+            margin_buffer: Minimum margin to keep available (default 0.50 = 50%)
+            max_margin_usage: Maximum percentage of balance to use as margin (default 0.50 = 50%)
+            
+        Returns:
+            Number of units to trade
+        """
+        if current_price <= 0:
+            logging.warning("Invalid current price, using minimum position size")
+            return 100
+        
+        # Calculate the maximum margin we're allowed to use
+        # This respects both the margin buffer and max usage percentage
+        max_allowed_margin = min(
+            available_margin - (balance * margin_buffer),  # Leave margin_buffer % available
+            balance * max_margin_usage  # Don't use more than max_margin_usage % of balance
+        )
+        
+        # Ensure we don't go negative
+        max_allowed_margin = max(0, max_allowed_margin)
+        
+        if max_allowed_margin <= 0:
+            logging.warning("Insufficient margin available after applying buffer")
+            return 100
+        
+        # For Oanda, margin required ≈ (units × price) / leverage
+        # We don't know the exact leverage, so we use a conservative estimate
+        # Assuming leverage of 50:1 for major pairs (worst case for margin requirement)
+        # This means: margin_required = (units × price) / 50
+        # Solving for units: units = (margin × 50) / price
+        
+        # Conservative leverage estimate (lower = more conservative)
+        estimated_leverage = 20  # Conservative estimate for most instruments
+        
+        # Calculate maximum units based on available margin
+        max_units = int((max_allowed_margin * estimated_leverage) / current_price)
+        
+        # Ensure minimum position size
+        units = max(100, max_units)
+        
+        logging.debug(f"Margin-based sizing: balance={balance:.2f}, "
+                     f"available_margin={available_margin:.2f}, "
+                     f"max_allowed_margin={max_allowed_margin:.2f}, "
+                     f"price={current_price:.5f}, units={units}")
+        
+        return units
+    
     def calculate_fixed_percentage(self, balance, stop_loss_pips, pip_value=10):
         """
         Calculate position size using fixed percentage method.
@@ -93,7 +150,8 @@ class PositionSizer:
         return units
     
     def calculate_position_size(self, balance, stop_loss_pips, pip_value=10, 
-                               performance_metrics=None, confidence=1.0):
+                               performance_metrics=None, confidence=1.0, 
+                               available_margin=None, current_price=None, margin_buffer=0.50):
         """
         Calculate position size based on configured method.
         
@@ -103,10 +161,41 @@ class PositionSizer:
             pip_value: Value of 1 pip for the instrument
             performance_metrics: Optional dict with win_rate, avg_win, avg_loss
             confidence: Signal confidence (0.0 to 1.0)
+            available_margin: Optional available margin from API (for margin-based sizing)
+            current_price: Optional current instrument price (for margin-based sizing)
+            margin_buffer: Margin buffer to maintain (default 0.50 = 50%)
             
         Returns:
             Tuple of (units, risk_percentage)
         """
+        # If available_margin and current_price are provided, use margin-based sizing
+        # This takes priority over other methods to prevent INSUFFICIENT_MARGIN errors
+        if available_margin is not None and current_price is not None:
+            logging.info("Using margin-based position sizing to prevent INSUFFICIENT_MARGIN errors")
+            
+            # Calculate position size based on available margin
+            units = self.calculate_margin_based(
+                balance=balance,
+                available_margin=available_margin,
+                current_price=current_price,
+                margin_buffer=margin_buffer,
+                max_margin_usage=0.50  # Use up to 50% of balance as per requirement
+            )
+            
+            # Still enforce minimum position size for broker requirements
+            units = self._enforce_minimum_position_size(units, pip_value, stop_loss_pips)
+            
+            # Calculate risk percentage for reporting
+            # Risk = units × stop_loss_pips × pip_value
+            risk_amount = units * stop_loss_pips * pip_value if stop_loss_pips > 0 else 0
+            risk_pct = risk_amount / balance if balance > 0 else 0
+            
+            logging.info(f"Margin-based position sizing: {units} units "
+                        f"(estimated risk: {risk_pct*100:.2f}% of balance)")
+            
+            return units, risk_pct
+        
+        # Fall back to original methods if margin info not available
         if self.method == 'kelly_criterion' and performance_metrics:
             # Use Kelly Criterion if we have performance data
             win_rate = performance_metrics.get('win_rate', 0.5)
