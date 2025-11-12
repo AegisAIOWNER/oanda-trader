@@ -24,6 +24,7 @@ from risk_manager import RiskManager, OrderResponseHandler
 from monitoring import StructuredLogger, PerformanceMonitor, HealthChecker
 from trailing_stops import TrailingStopManager
 from analytics import AnalyticsEngine
+from persistent_pairs import PersistentPairsManager
 print("DEBUG: All imports completed successfully", flush=True)
 
 class OandaTradingBot:
@@ -171,6 +172,16 @@ class OandaTradingBot:
         self.ml_auto_train_interval = ML_AUTO_TRAIN_INTERVAL if hasattr(self, 'enable_ml') and self.enable_ml else None
         self.ml_trades_since_last_train = 0
         
+        # Initialize persistent pairs manager for single-trade strategy
+        print("DEBUG: Initializing persistent pairs manager...", flush=True)
+        self.enable_persistent_pairs = ENABLE_PERSISTENT_PAIRS
+        self.persistent_pairs_mgr = PersistentPairsManager(
+            storage_file=PERSISTENT_PAIRS_FILE,
+            requalification_interval=PAIR_REQUALIFICATION_INTERVAL,
+            max_pairs=MAX_PAIRS_TO_SCAN
+        ) if ENABLE_PERSISTENT_PAIRS else None
+        print("DEBUG: Persistent pairs manager initialized", flush=True)
+        
         # Initialize daily start balance after all components are ready
         print("DEBUG: Attempting to get balance...", flush=True)
         self.daily_start_balance = self.get_balance()
@@ -186,7 +197,9 @@ class OandaTradingBot:
                      f"Health monitoring: {ENABLE_HEALTH_CHECKS}, "
                      f"Position monitoring: {ENABLE_POSITION_MONITORING}, "
                      f"Trailing stops: {ENABLE_TRAILING_STOPS}, "
-                     f"Comprehensive analytics: {ENABLE_COMPREHENSIVE_ANALYTICS}")
+                     f"Comprehensive analytics: {ENABLE_COMPREHENSIVE_ANALYTICS}, "
+                     f"Persistent pairs: {ENABLE_PERSISTENT_PAIRS}, "
+                     f"Single-trade strategy: {MAX_OPEN_POSITIONS == 1}")
         print("DEBUG: OandaTradingBot.__init__ completed successfully", flush=True)
 
     def _rate_limited_request(self, endpoint):
@@ -584,7 +597,7 @@ class OandaTradingBot:
             return None
 
     def scan_pairs_for_signals(self):
-        """Scan all configured pairs and return signals with confidence scores."""
+        """Scan pairs for signals with single-trade strategy focus."""
         signals = []
         atr_readings = []  # Collect ATR values for volatility detection
         
@@ -593,48 +606,81 @@ class OandaTradingBot:
                            if self.enable_adaptive_threshold 
                            else CONFIDENCE_THRESHOLD)
         
-        # Get available instruments (dynamic or config-based)
-        available_instruments = self._get_available_instruments()
-        
-        # Get currently open position instruments to prioritize
+        # Get currently open position instruments
         open_position_instruments = self.get_open_position_instruments()
         
-        # Select pairs to scan - prioritize open positions, then fill with random/sequential
+        # SINGLE-TRADE STRATEGY: If we have an open position, focus exclusively on it
+        if open_position_instruments and MAX_OPEN_POSITIONS == 1:
+            print(f"🎯 SINGLE-TRADE MODE: Monitoring existing position {open_position_instruments[0]} - skipping new signal scan", flush=True)
+            # Return empty signals - we're focused on the open trade
+            return signals, atr_readings
+        
+        # No open positions, so scan for new opportunities
         pairs_to_scan = []
-        selection_mode = "prioritized"
+        selection_mode = "persistent"
         
-        # First, add all open position instruments (up to MAX_OPEN_POSITIONS)
-        for instrument in open_position_instruments[:MAX_OPEN_POSITIONS]:
-            if instrument in available_instruments:
-                pairs_to_scan.append(instrument)
-        
-        # Calculate remaining slots after adding open positions
-        remaining_slots = MAX_PAIRS_TO_SCAN - len(pairs_to_scan)
-        
-        if remaining_slots > 0:
-            # Get instruments that are not already in pairs_to_scan
-            remaining_instruments = [inst for inst in available_instruments if inst not in pairs_to_scan]
+        # Use persistent pairs if enabled
+        if self.enable_persistent_pairs and self.persistent_pairs_mgr:
+            # Initialize persistent pairs if empty
+            if len(self.persistent_pairs_mgr) == 0:
+                available_instruments = self._get_available_instruments()
+                self.persistent_pairs_mgr.initialize_from_available(available_instruments)
             
-            if self.enable_dynamic_instruments and len(remaining_instruments) > remaining_slots:
-                # Randomly select from remaining to fill slots
-                pairs_to_scan.extend(random.sample(remaining_instruments, remaining_slots))
-                selection_mode = "prioritized+random"
-            else:
-                # Use first N remaining instruments (backward compatible)
-                pairs_to_scan.extend(remaining_instruments[:remaining_slots])
-                selection_mode = "prioritized+sequential"
+            # Check if it's time to requalify pairs
+            if self.persistent_pairs_mgr.should_requalify_pairs():
+                print(f"🔄 Requalifying persistent pairs...", flush=True)
+                # Get all pairs from manager (including disqualified ones for rechecking)
+                all_pairs = list(self.persistent_pairs_mgr.pairs.keys())
+                
+                # Requalify each pair
+                for pair in all_pairs:
+                    try:
+                        df = self.get_prices(pair, count=50, granularity=GRANULARITY)
+                        qualified = self.persistent_pairs_mgr.check_pair_qualification(
+                            pair, df, get_signal_with_confidence
+                        )
+                        self.persistent_pairs_mgr.update_pair_qualification(pair, qualified)
+                    except Exception as e:
+                        logging.warning(f"Failed to requalify {pair}: {e}")
+                        self.persistent_pairs_mgr.update_pair_qualification(pair, False)
+                
+                # Log stats after requalification
+                stats = self.persistent_pairs_mgr.get_stats()
+                print(f"📊 Persistent pairs: {stats['qualified_pairs']}/{stats['total_pairs']} qualified", flush=True)
+            
+            # Get qualified pairs to scan
+            pairs_to_scan = self.persistent_pairs_mgr.get_pairs_to_scan()
+            selection_mode = "persistent"
+        else:
+            # Fallback to traditional scanning
+            available_instruments = self._get_available_instruments()
+            
+            # For backward compatibility when persistent pairs disabled
+            if open_position_instruments:
+                pairs_to_scan = open_position_instruments[:MAX_OPEN_POSITIONS]
+                selection_mode = "prioritized"
+            
+            remaining_slots = MAX_PAIRS_TO_SCAN - len(pairs_to_scan)
+            if remaining_slots > 0:
+                remaining_instruments = [inst for inst in available_instruments if inst not in pairs_to_scan]
+                
+                if self.enable_dynamic_instruments and len(remaining_instruments) > remaining_slots:
+                    pairs_to_scan.extend(random.sample(remaining_instruments, remaining_slots))
+                    selection_mode = "prioritized+random"
+                else:
+                    pairs_to_scan.extend(remaining_instruments[:remaining_slots])
+                    selection_mode = "prioritized+sequential"
         
-        # Batch request optimization - collect all data first
-        print(f"Scanning {len(pairs_to_scan)} pairs for signals ({selection_mode} selection from {len(available_instruments)} available)... "
+        # Display scan info
+        print(f"Scanning {len(pairs_to_scan)} pairs for signals ({selection_mode} selection)... "
               f"(threshold: {current_threshold:.3f})", flush=True)
         
-        # Debug: Show the bot's thinking about the threshold
+        # Debug: Show the bot's thinking
         threshold_source = "adaptive" if self.enable_adaptive_threshold else "static"
-        instrument_source = "dynamic (API)" if self.enable_dynamic_instruments else "static (config)"
         print(f"🤖 BOT DECISION: Using {threshold_source} threshold = {current_threshold:.3f}", flush=True)
-        print(f"🤖 BOT DECISION: Using {instrument_source} instrument list", flush=True)
-        if open_position_instruments:
-            print(f"🎯 BOT DECISION: Prioritizing {len(open_position_instruments)} open positions: {', '.join(open_position_instruments)}", flush=True)
+        if self.enable_persistent_pairs:
+            stats = self.persistent_pairs_mgr.get_stats()
+            print(f"🤖 BOT DECISION: Using persistent pairs ({stats['qualified_pairs']} qualified)", flush=True)
         print(f"🤖 BOT DECISION: Scanning {len(pairs_to_scan)} pairs: {', '.join(pairs_to_scan)}", flush=True)
         
         for instrument in pairs_to_scan:
@@ -746,8 +792,9 @@ class OandaTradingBot:
         print(f"🏆 BOT DECISION: Selected best signal - {best['instrument']} {best['signal']} (confidence: {best['confidence']:.3f})", flush=True)
         return best
     
-    def calculate_atr_stops(self, atr, signal, instrument, stop_multiplier=None, profit_multiplier=None):
-        """Calculate ATR-based stop loss and take profit in pips.
+    def calculate_atr_stops(self, atr, signal, instrument, stop_multiplier=None, profit_multiplier=None, 
+                           confidence=None):
+        """Calculate ATR-based stop loss and take profit in pips with confidence adjustments.
         
         Args:
             atr: ATR value in price units
@@ -755,6 +802,7 @@ class OandaTradingBot:
             instrument: Trading instrument (e.g., 'EUR_USD', 'USD_JPY')
             stop_multiplier: Optional override for ATR stop multiplier (for volatility adjustments)
             profit_multiplier: Optional override for ATR profit multiplier (for volatility adjustments)
+            confidence: Optional confidence score (0.0-1.0) for stop loss adjustment
             
         Returns:
             tuple: (stop_loss_pips, take_profit_pips)
@@ -773,6 +821,16 @@ class OandaTradingBot:
         # Use provided multipliers or fall back to config defaults
         stop_mult = stop_multiplier if stop_multiplier is not None else ATR_STOP_MULTIPLIER
         profit_mult = profit_multiplier if profit_multiplier is not None else ATR_PROFIT_MULTIPLIER
+        
+        # CONFIDENCE-BASED STOP LOSS ADJUSTMENT
+        # If confidence is high (>0.8) and signal is BUY (upward trend), loosen stop loss
+        if confidence is not None and confidence >= HIGH_CONFIDENCE_THRESHOLD and signal == 'BUY':
+            original_stop_mult = stop_mult
+            stop_mult = stop_mult * HIGH_CONFIDENCE_SL_MULTIPLIER
+            logging.info(f"🎯 High confidence {signal} signal ({confidence:.2f}) - loosening SL: "
+                        f"{original_stop_mult:.2f}x -> {stop_mult:.2f}x ATR")
+            print(f"🎯 HIGH CONFIDENCE ADJUSTMENT: SL multiplier {original_stop_mult:.2f}x -> {stop_mult:.2f}x "
+                  f"for {signal} signal with confidence {confidence:.2f}", flush=True)
         
         # Dynamically determine pip size from instrument metadata
         pip_size = self._get_instrument_pip_size(instrument)
@@ -1343,8 +1401,9 @@ class OandaTradingBot:
                     logging.info(f"🎯 Using volatility-adjusted multipliers: "
                                f"stop={stop_multiplier:.2f}x, profit={profit_multiplier:.2f}x")
             
-            # Calculate ATR-based stops (returns pips) with adjusted multipliers
-            sl, tp = self.calculate_atr_stops(atr, signal, instrument, stop_multiplier, profit_multiplier)
+            # Calculate ATR-based stops (returns pips) with adjusted multipliers and confidence
+            sl, tp = self.calculate_atr_stops(atr, signal, instrument, stop_multiplier, profit_multiplier, 
+                                              confidence=confidence)
             
             # Get current price for pip value calculation
             current_price = best_signal['df']['close'].iloc[-1]
