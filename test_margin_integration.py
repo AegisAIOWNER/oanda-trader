@@ -154,10 +154,12 @@ class TestMarginIntegration(unittest.TestCase):
         self.assertGreater(units, 0)
         
         # Verify the position respects margin constraints
-        # With 4500 available, 50% buffer (2500 reserved), and 50% max usage (2500)
-        # Max allowed margin = min(4500 - 2500, 2500) = min(2000, 2500) = 2000
-        # Max units = (2000 * 20) / 1.35 = ~29,630 units
-        estimated_max_units = 30000
+        # New formula: margin_buffer is % of available margin to keep as buffer
+        # Usable margin = 4500 × (1 - 0.50) = 2250
+        # Max from balance = 5000 × 0.50 = 2500
+        # Max allowed margin = min(2250, 2500) = 2250
+        # Max units = (2250 * 20) / 1.35 = ~33,333 units
+        estimated_max_units = 34000
         self.assertLessEqual(units, estimated_max_units)
         
         # Verify minimum is still enforced
