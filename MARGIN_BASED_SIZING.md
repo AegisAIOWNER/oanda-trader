@@ -26,11 +26,10 @@ def calculate_margin_based(balance, available_margin, current_price,
     Calculate position size based on available margin.
     
     Formula:
-    1. Max allowed margin = min(
-          available_margin - (balance × margin_buffer),  # Leave 50% buffer
-          balance × max_margin_usage                     # Don't use > 50% of balance
-       )
-    2. Max units = (max_allowed_margin × estimated_leverage) / current_price
+    1. Usable margin = available_margin × (1 - margin_buffer)  # Use (1-buffer)% of available margin
+    2. Max margin from balance = balance × max_margin_usage    # Don't use > 50% of balance
+    3. Max allowed margin = min(usable_margin, max_margin_from_balance)
+    4. Max units = (max_allowed_margin × estimated_leverage) / current_price
     """
 ```
 
@@ -38,7 +37,7 @@ def calculate_margin_based(balance, available_margin, current_price,
 
 - **available_margin**: Retrieved from Oanda API via `get_margin_info()`
 - **current_price**: Current market price of the instrument
-- **margin_buffer**: Minimum margin to keep available (default: 0.50 = 50%)
+- **margin_buffer**: Percentage of available margin to keep as safety buffer (default: 0.50 = 50%)
 - **max_margin_usage**: Maximum percentage of balance to use as margin (default: 0.50 = 50%)
 - **estimated_leverage**: Conservative estimate of 20:1 (safer than typical 50:1)
 
@@ -87,12 +86,15 @@ Balance: $10,000
 Available Margin: $9,000
 Current Price: 1.1000
 Stop Loss: 10 pips
+Margin Buffer: 50%
 
 Calculation:
-- Max allowed margin = min(9000 - 5000, 5000) = $4,000
-- Max units = (4000 × 20) / 1.1 = ~72,727 units
+- Usable margin = $9,000 × (1 - 0.50) = $4,500
+- Max from balance = $10,000 × 0.50 = $5,000
+- Max allowed margin = min($4,500, $5,000) = $4,500
+- Max units = ($4,500 × 20) / 1.1 = ~81,818 units
 
-Result: 72,727 units (vs 200,000 with risk-based)
+Result: 81,818 units (vs 200,000 with risk-based)
 ```
 
 ### Scenario 2: USD_SGD Trade (High Leverage)
@@ -101,12 +103,15 @@ Balance: $5,000
 Available Margin: $4,500
 Current Price: 1.3500
 Stop Loss: 20 pips
+Margin Buffer: 50%
 
 Calculation:
-- Max allowed margin = min(4500 - 2500, 2500) = $2,000
-- Max units = (2000 × 20) / 1.35 = ~29,630 units
+- Usable margin = $4,500 × (1 - 0.50) = $2,250
+- Max from balance = $5,000 × 0.50 = $2,500
+- Max allowed margin = min($2,250, $2,500) = $2,250
+- Max units = ($2,250 × 20) / 1.35 = ~33,333 units
 
-Result: 29,630 units (prevents INSUFFICIENT_MARGIN)
+Result: 33,333 units (prevents INSUFFICIENT_MARGIN)
 ```
 
 ### Scenario 3: Low Margin Scenario
@@ -114,12 +119,16 @@ Result: 29,630 units (prevents INSUFFICIENT_MARGIN)
 Balance: $10,000
 Available Margin: $500 (very low)
 Current Price: 1.2000
+Margin Buffer: 50%
 
 Calculation:
-- Max allowed margin = min(500 - 5000, 5000) = 0 (negative)
-- Falls back to minimum: 100 units
+- Usable margin = $500 × (1 - 0.50) = $250
+- Max from balance = $10,000 × 0.50 = $5,000
+- Max allowed margin = min($250, $5,000) = $250
+- Max units = ($250 × 20) / 1.2 = ~4,166 units
 
-Result: 100 units (minimum enforced)
+Result: 4,166 units (better than old formula's 0/minimum)
+Note: The new formula handles low margin scenarios better
 ```
 
 ## Testing

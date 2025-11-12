@@ -74,7 +74,10 @@ class TestMarginBasedSizing(unittest.TestCase):
         implied_margin = (units * current_price) / estimated_leverage
         
         # Verify we're not using more than allowed
-        max_allowed_margin = self.available_margin - (self.balance * margin_buffer)
+        # New formula: margin_buffer is a percentage of available margin to keep as buffer
+        usable_margin = self.available_margin * (1 - margin_buffer)
+        max_margin_from_balance = self.balance * 0.50  # max_margin_usage default
+        max_allowed_margin = min(usable_margin, max_margin_from_balance)
         self.assertLessEqual(implied_margin, max_allowed_margin * 1.1)  # Allow 10% tolerance
     
     def test_margin_based_usd_jpy(self):
@@ -278,6 +281,49 @@ class TestMarginBasedSizing(unittest.TestCase):
         
         # Units should be smaller due to high price
         self.assertLess(units, 10000)
+    
+    def test_usd_sgd_leveraged_instrument(self):
+        """Test margin-based sizing specifically for USD_SGD (high leverage instrument)."""
+        sizer = PositionSizer(
+            method='fixed_percentage',
+            risk_per_trade=0.02,
+            min_trade_value=self.min_trade_value
+        )
+        
+        # USD_SGD typical scenario
+        balance = 5000.0
+        available_margin = 4500.0
+        current_price = 1.3500
+        pip_value = 0.0001
+        stop_loss_pips = 20.0
+        margin_buffer = 0.0  # Use all available margin (current config)
+        
+        units, risk_pct = sizer.calculate_position_size(
+            balance=balance,
+            stop_loss_pips=stop_loss_pips,
+            pip_value=pip_value,
+            confidence=1.0,
+            available_margin=available_margin,
+            current_price=current_price,
+            margin_buffer=margin_buffer
+        )
+        
+        # Should get valid position size
+        self.assertGreater(units, 0)
+        
+        # With margin_buffer=0.0:
+        # Usable margin = 4500 × (1 - 0.0) = 4500
+        # Max from balance = 5000 × 0.50 = 2500
+        # Max allowed margin = min(4500, 2500) = 2500
+        # Max units = (2500 × 20) / 1.35 = ~37,037 units
+        expected_max_units = 38000
+        self.assertLessEqual(units, expected_max_units)
+        
+        # Verify we're using approximately 50% of balance as desired
+        estimated_leverage = 20
+        implied_margin = (units * current_price) / estimated_leverage
+        self.assertLessEqual(implied_margin, balance * 0.55)  # Allow 5% tolerance
+        self.assertGreaterEqual(implied_margin, balance * 0.45)  # Should be close to 50%
 
 
 if __name__ == '__main__':

@@ -69,7 +69,7 @@ class PositionSizer:
             balance: Account balance
             available_margin: Available margin from API
             current_price: Current price of the instrument
-            margin_buffer: Minimum margin to keep available (default 0.50 = 50%)
+            margin_buffer: Percentage of available margin to keep as buffer (default 0.50 = 50%)
             max_margin_usage: Maximum percentage of balance to use as margin (default 0.50 = 50%)
             
         Returns:
@@ -80,11 +80,15 @@ class PositionSizer:
             return 100
         
         # Calculate the maximum margin we're allowed to use
-        # This respects both the margin buffer and max usage percentage
-        max_allowed_margin = min(
-            available_margin - (balance * margin_buffer),  # Leave margin_buffer % available
-            balance * max_margin_usage  # Don't use more than max_margin_usage % of balance
-        )
+        # margin_buffer is interpreted as a percentage of available margin to keep as safety buffer
+        # For example, if margin_buffer=0.50, we use only 50% of available margin, keeping 50% as buffer
+        usable_margin = available_margin * (1 - margin_buffer)
+        
+        # Don't use more than max_margin_usage % of balance (typically 50%)
+        max_margin_from_balance = balance * max_margin_usage
+        
+        # Take the minimum of the two constraints
+        max_allowed_margin = min(usable_margin, max_margin_from_balance)
         
         # Ensure we don't go negative
         max_allowed_margin = max(0, max_allowed_margin)
