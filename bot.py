@@ -1502,22 +1502,83 @@ class OandaTradingBot:
             # Get margin information for margin-based position sizing
             margin_info = self.get_margin_info()
             
-            # Calculate optimal position size using margin-based approach
-            # This prevents INSUFFICIENT_MARGIN errors for leveraged instruments
-            performance_metrics = self.db.get_performance_metrics(days=30)
-            units, risk_pct = self.position_sizer.calculate_position_size(
-                balance=current_balance,
-                stop_loss_pips=sl,
-                pip_value=pip_value,
-                performance_metrics=performance_metrics,
-                confidence=confidence,
-                available_margin=margin_info['margin_available'],
-                current_price=current_price,
-                margin_buffer=MARGIN_BUFFER
-            )
+            # Calculate optimal position size
+            if ENABLE_AUTO_SCALE_UNITS:
+                # Use auto-scaling to fit both margin and risk constraints
+                logging.info(f"Using auto-scaling position sizing for {instrument}")
+                
+                # Get instrument metadata from cache
+                inst_metadata = self.instruments_cache.get(instrument, {})
+                margin_rate = inst_metadata.get('marginRate', 0.0333)
+                minimum_trade_size = inst_metadata.get('minimumTradeSize', '1')
+                trade_units_precision = inst_metadata.get('tradeUnitsPrecision', 0)
+                maximum_order_units = inst_metadata.get('maximumOrderUnits', '100000000')
+                
+                units, risk_pct, debug = self.position_sizer.calculate_auto_scaled_units(
+                    balance=current_balance,
+                    stop_loss_pips=sl,
+                    pip_value=pip_value,
+                    current_price=current_price,
+                    available_margin=margin_info['margin_available'],
+                    margin_rate=margin_rate,
+                    minimum_trade_size=minimum_trade_size,
+                    trade_units_precision=trade_units_precision,
+                    maximum_order_units=maximum_order_units,
+                    risk_per_trade=MAX_RISK_PER_TRADE,
+                    max_units_per_instrument=MAX_UNITS_PER_INSTRUMENT,
+                    min_trade_value=MIN_TRADE_VALUE,
+                    margin_buffer=AUTO_SCALE_MARGIN_BUFFER,
+                    auto_scale_min_units=AUTO_SCALE_MIN_UNITS
+                )
+                
+                # Log debug information
+                logging.debug(f"Auto-scaling debug for {instrument}:")
+                logging.debug(f"  effective_available_margin: ${debug.get('effective_available_margin', 0):.2f}")
+                logging.debug(f"  units_by_margin: {debug.get('units_by_margin', 0)}")
+                logging.debug(f"  units_by_risk: {debug.get('units_by_risk', 0)}")
+                logging.debug(f"  candidate_units: {debug.get('candidate_units', 0)}")
+                logging.debug(f"  min_trade_size: {debug.get('min_trade_size', 0)}")
+                
+                if units == 0:
+                    # Skip this trade
+                    skip_reason = debug.get('reason', 'Unknown reason')
+                    logging.warning(f"Skipping trade for {instrument}: {skip_reason}")
+                    if self.structured_logger:
+                        self.structured_logger.log_trade_decision(
+                            instrument, signal, confidence, "SKIPPED", skip_reason
+                        )
+                    return True
+                
+                logging.info(f"Auto-scaled position size for {instrument}: {units} units, "
+                           f"risk={risk_pct*100:.2f}%, margin_rate={margin_rate:.4f}")
+            else:
+                # Use existing margin-based approach
+                # This prevents INSUFFICIENT_MARGIN errors for leveraged instruments
+                performance_metrics = self.db.get_performance_metrics(days=30)
+                units, risk_pct = self.position_sizer.calculate_position_size(
+                    balance=current_balance,
+                    stop_loss_pips=sl,
+                    pip_value=pip_value,
+                    performance_metrics=performance_metrics,
+                    confidence=confidence,
+                    available_margin=margin_info['margin_available'],
+                    current_price=current_price,
+                    margin_buffer=MARGIN_BUFFER
+                )
             
             logging.info(f"Placing order for {instrument}: {signal} with SL={sl:.4f}, TP={tp:.4f}, \
                         units={units}, risk={risk_pct*100:.2f}%, pip_value={pip_value:.4f}")
+            
+            # Calculate risk amount for final validation
+            risk_amount = units * sl * pip_value
+            
+            # Final risk check using RiskManager (will be called again in place_order, but good to check early)
+            can_open, reason = self.risk_manager.can_open_position(instrument, units, risk_amount, current_balance)
+            if not can_open:
+                logging.warning(f"Final risk check failed for {instrument}: {reason}")
+                if self.structured_logger:
+                    self.structured_logger.log_risk_check("position_limit", False, reason, instrument=instrument)
+                return True
             
             # Place order with current price for risk calculation
             response = self.place_order(instrument, signal, units, sl, tp, current_price)

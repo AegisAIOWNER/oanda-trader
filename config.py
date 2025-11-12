@@ -71,6 +71,11 @@ DYNAMIC_INSTRUMENT_CACHE_HOURS = 24  # Hours to cache instrument list before ref
 # Affordability Pre-filter settings
 ENABLE_AFFORDABILITY_FILTER = True  # Enable affordability check to skip instruments with insufficient margin
 
+# Auto-scaling Position Sizing settings
+ENABLE_AUTO_SCALE_UNITS = True  # Enable auto-scaling position sizing to fit available margin and risk
+AUTO_SCALE_MARGIN_BUFFER = MARGIN_BUFFER  # Margin buffer for auto-scaling (reuse existing buffer by default)
+AUTO_SCALE_MIN_UNITS = None  # Optional global minimum units; if None, use instrument minimumTradeSize
+
 # Enhanced Risk Management settings (future-proofing)
 MAX_OPEN_POSITIONS = 1  # Maximum concurrent open positions (single-trade strategy)
 MAX_RISK_PER_TRADE = 0.5  # Maximum risk per trade (50% of balance) - increased for focused single-trade strategy on high-confidence signals like USB05Y_USD
