@@ -1549,8 +1549,16 @@ class OandaTradingBot:
                         )
                     return True
                 
-                logging.info(f"Auto-scaled position size for {instrument}: {units} units, "
-                           f"risk={risk_pct*100:.2f}%, margin_rate={margin_rate:.4f}")
+                # Ensure units and margin_rate are properly formatted (defensive programming)
+                try:
+                    units_str = f"{int(units)}"
+                    margin_rate_str = f"{float(margin_rate):.4f}"
+                except (ValueError, TypeError):
+                    units_str = str(units)
+                    margin_rate_str = str(margin_rate)
+                
+                logging.info(f"Auto-scaled position size for {instrument}: {units_str} units, "
+                           f"risk={risk_pct*100:.2f}%, margin_rate={margin_rate_str}")
             else:
                 # Use existing margin-based approach
                 # This prevents INSUFFICIENT_MARGIN errors for leveraged instruments
