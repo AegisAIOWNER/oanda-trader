@@ -215,6 +215,60 @@ class TestATRStopsCalculation(unittest.TestCase):
             # sl_pips = 0.01 / 0.01 = 1.0
             self.assertAlmostEqual(sl_pips, 1.0, places=5,
                                  msg=f"Failed for {instrument}")
+    
+    def test_take_profit_cap_at_50_pips(self):
+        """Test that take profit is capped at 50 pips to prevent 'out of reasonable range' errors."""
+        # Test case 1: High ATR that would normally produce >50 pips TP
+        # EUR_USD with high ATR and large profit multiplier
+        atr = 0.0050  # 50 pips worth of ATR
+        signal = 'BUY'
+        instrument = 'EUR_USD'
+        profit_multiplier = 2.0  # Would result in 100 pips without cap
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(
+            atr, signal, instrument, 
+            profit_multiplier=profit_multiplier
+        )
+        
+        # TP should be capped at 50 pips
+        self.assertEqual(tp_pips, 50, msg="TP should be capped at 50 pips")
+        
+        # Test case 2: Very high volatility scenario
+        atr = 0.0100  # 100 pips worth of ATR
+        profit_multiplier = 3.0  # Would result in 300 pips without cap
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(
+            atr, signal, instrument, 
+            profit_multiplier=profit_multiplier
+        )
+        
+        # TP should still be capped at 50 pips
+        self.assertEqual(tp_pips, 50, msg="TP should be capped at 50 pips even with very high ATR")
+        
+        # Test case 3: Normal scenario that doesn't trigger cap
+        atr = 0.0002  # 2 pips worth of ATR
+        profit_multiplier = 1.5  # Would result in 3 pips
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(
+            atr, signal, instrument, 
+            profit_multiplier=profit_multiplier
+        )
+        
+        # TP should NOT be capped (should be ~3 pips)
+        self.assertLess(tp_pips, 50, msg="TP should not be capped for normal ATR values")
+        self.assertAlmostEqual(tp_pips, 3.0, places=5)
+        
+        # Test case 4: Edge case exactly at 50 pips
+        atr = 0.0050  # 50 pips
+        profit_multiplier = 1.0  # Results in exactly 50 pips
+        
+        sl_pips, tp_pips = self.bot.calculate_atr_stops(
+            atr, signal, instrument, 
+            profit_multiplier=profit_multiplier
+        )
+        
+        # TP should be exactly 50 pips (not capped, naturally at limit)
+        self.assertEqual(tp_pips, 50, msg="TP should be 50 pips when naturally at limit")
 
 
 class TestPositionSizing(unittest.TestCase):
